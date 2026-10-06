@@ -1,7 +1,7 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
-import { fieldByNumber } from "../lib/game-data";
+import { exactFinishPath, fieldByNumber } from "../lib/game-data";
 
 interface Env {
   ASSETS: Fetcher;
@@ -249,15 +249,16 @@ async function api(request: Request, env: Env, url: URL) {
       const multiplier = player.nextRollMultiplier || 1;
       player.nextRollMultiplier = 1;
       const from = player.position;
-      const to = Math.min(100, from + rolled * multiplier);
-      const path = Array.from({ length: Math.max(0, to - from) }, (_, index) => from + index + 1);
+      const path = exactFinishPath(from, rolled * multiplier);
+      const to = path.at(-1) ?? from;
       player.position = to;
       state.diceResult = rolled;
       state.turnState = "moving";
-      state.lastAction = `${player.name} würfelt ${rolled}${multiplier > 1 ? ` × ${multiplier}` : ""} und zieht auf Feld ${to}.`;
+      const bounced = from + rolled * multiplier > 100;
+      state.lastAction = `${player.name} würfelt ${rolled}${multiplier > 1 ? ` × ${multiplier}` : ""}${bounced ? `, erreicht Feld 100 und geht zurück auf Feld ${to}.` : ` und zieht auf Feld ${to}.`}`;
       const event = applyFieldAction(state, player, to);
       state.lastMove = { id: makeId(), playerId, path, secondary: event.secondary };
-      if (state.status !== "finished") {
+      if (!state.winner) {
         state.turnState = "waiting";
         if (!event.extraRoll) advanceTurn(state, state.playerOrder.indexOf(playerId));
         else state.lastAction += " Nochmals würfeln!";

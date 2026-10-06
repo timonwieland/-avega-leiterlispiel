@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fieldByNumber, fields, fieldGridPosition, movementConnections } from "../lib/game-data.ts";
+import { exactFinishPath, fieldByNumber, fields, fieldGridPosition, movementConnections } from "../lib/game-data.ts";
 
 test("the board contains one independent configuration for every field", () => {
   assert.equal(fields.length, 100);
@@ -22,11 +22,14 @@ test("all movement fields from the original instructions are configured", () => 
   for (const [from, to] of expected) assert.equal(fieldByNumber[from].targetField, to);
 });
 
-test("special mechanics and the generous goal rule are represented", () => {
+test("special mechanics and the exact goal rule are represented", () => {
   assert.equal(fieldByNumber[25].skipTurns, 1);
   assert.equal(fieldByNumber[34].extraRoll, true);
   assert.equal(fieldByNumber[65].actionType, "leaderBack");
   assert.equal(fieldByNumber[89].nextRollMultiplier, 2);
   assert.equal(fieldByNumber[99].actionType, "swapNearest");
   assert.equal(fieldByNumber[100].actionType, "goal");
+  assert.deepEqual(exactFinishPath(97, 2), [98, 99]);
+  assert.deepEqual(exactFinishPath(97, 3), [98, 99, 100]);
+  assert.deepEqual(exactFinishPath(97, 5), [98, 99, 100, 99, 98]);
 });

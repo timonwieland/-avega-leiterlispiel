@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generator: Adobe Illustrator 25.2.3, SVG Export Plug-In . SVG Version: 6.00 Build 0)  -->
+<svg version="1.1" id="Ebene_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
+	 viewBox="0 0 250.5 257.9" style="enable-background:new 0 0 250.5 257.9;" xml:space="preserve">
+<style type="text/css">
+	.st0{fill:#0069B4;}
+	.st1{fill:#95C11F;}
+</style>
+<g id="logo">
+	<g>
+		<path class="st0" d="M52,108.3h20.5V64.4h43.7V43.9H57.7c-3.1,0-5.7,2.5-5.7,5.7C52,49.6,52,108.3,52,108.3z"/>
+		<path class="st0" d="M136.6,43.9v20.5h43.6v43.8h20.6V49.6c0-3.1-2.5-5.7-5.7-5.7C195.1,43.9,136.6,43.9,136.6,43.9z"/>
+	</g>
+	<path class="st1" d="M201,222.9l-25-30.2h19.1c3.1,0,5.7-2.5,5.7-5.7v-58.3h-20.6v43.5H72.5v-43.5H52V187c0,3.1,2.5,5.7,5.7,5.7
+		h78.9L201,222.9z"/>
+	<g>
+		<rect x="82.4" y="128.7" class="st1" width="14.2" height="14.1"/>
+		<rect x="106.4" y="118.9" class="st1" width="9.8" height="9.8"/>
+		<rect x="129.4" y="118.9" class="st1" width="9.8" height="9.8"/>
+		<rect x="155" y="98.5" class="st0" width="9.8" height="9.8"/>
+		<rect x="149" y="115.3" class="st0" width="6" height="6"/>
+		<rect x="90.6" y="115.3" class="st0" width="6" height="6"/>
+		<rect x="164.7" y="115.4" class="st1" width="6" height="6"/>
+	</g>
+</g>
+</svg>
