@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { exactFinishPath, fieldByNumber, fields, fieldGridPosition, movementConnections, playerColors } from "../lib/game-data";
+import { exactFinishPath, fieldByNumber, fields, playerColors } from "../lib/game-data";
 
 type Player = { id: string; name: string; color: string; position: number; ready: boolean; skipTurns: number; nextRollMultiplier: number; isBot?: boolean };
 type GameState = {
@@ -164,32 +164,23 @@ function Board({ state, me, displayPositions, focusField }: { state: GameState; 
     return Array.from({ length: 10 }, (_, col) => gameRow % 2 === 0 ? gameRow * 10 + col + 1 : gameRow * 10 + (10 - col));
   }).flat(), []);
   return <div className="board-viewport" ref={boardRef}><div className="board" aria-label="AVEGA Spielfeld mit 100 Feldern">
-    <div className="connection-layer" aria-hidden="true">{movementConnections.map((connection) => {
-      if (connection.type === "graphic") return null;
-      const start = fieldGridPosition(connection.from); const end = fieldGridPosition(connection.to);
-      const x1 = (start.column + .5) * 10; const y1 = (start.rowFromTop + .5) * 10; const x2 = (end.column + .5) * 10; const y2 = (end.rowFromTop + .5) * 10;
-      const length = Math.hypot(x2 - x1, y2 - y1); const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
-      if (connection.type === "snake" && connection.asset) return <img key={connection.from} className={`snake-asset snake-${connection.from}`} src={connection.asset} alt="" />;
-      return <div key={connection.from} className="connection ladder" style={{ left: `${x1}%`, top: `${y1}%`, width: `${length}%`, transform: `rotate(${angle}deg)` }}><i /></div>;
-    })}</div>
     {ordered.map((number) => { const field = fieldByNumber[number]; const occupants = state.players.filter((player) => displayPositions[player.id] === number);
-      return <div key={number} data-field={number} className={`field ${field.fieldType} ${number === focusField ? "focused" : ""}`} style={field.illustration ? { backgroundImage: `url(${field.illustration})` } : undefined}>
-        <span className="field-number">{number}</span>{field.fieldType !== "normal" && <span className="event-dot" aria-label="Spezialfeld" />}
-        {number === 42 && <img className="cup-signet" src="/assets/avega-signet.svg" alt="" />}
+      return <div key={number} data-field={number} aria-label={`Feld ${number}${field.fieldType !== "normal" ? ", Spezialfeld" : ""}`} className={`field ${field.fieldType} ${number === focusField ? "focused" : ""}`}>
+        <span className="field-number">{number}</span>
         <div className="tokens">{occupants.map((player, index) => <span key={player.id} className={`token ${player.id === me ? "mine" : ""}`} style={{ background: player.color, transform: `translate(${(index % 3) * 7 - 7}px, ${Math.floor(index / 3) * 7}px)` }} title={player.name}><i /></span>)}</div>
       </div>;
     })}
   </div></div>;
 }
 
-function EventCard({ state, onClose }: { state: GameState; onClose: () => void }) {
+function EventCard({ state, onClose, onHoverChange }: { state: GameState; onClose: () => void; onHoverChange: (hovering: boolean) => void }) {
   if (!state.lastEvent) return null; const event = state.lastEvent; const field = fieldByNumber[event.fieldNumber]; const player = state.players.find((entry) => entry.id === event.playerId);
-  return <div className="event-card" role="dialog" aria-live="polite"><button className="icon-button close" onClick={onClose} aria-label="Ereignis schliessen">×</button><div className="event-art"><img src={field.illustration} alt="Originalillustration des Feldes" /><b>Feld {field.fieldNumber}</b></div><div className="event-copy"><p className="eyebrow">{field.date || "AVEGA Geschichte"}</p><h2>{field.title}</h2><p>{field.description}</p><div className="event-action"><span>Spielaktion für {player?.name}</span><strong>{field.actionLabel}</strong></div></div></div>;
+  return <div className="event-card" role="dialog" aria-live="polite" onMouseEnter={() => onHoverChange(true)} onMouseLeave={() => onHoverChange(false)}><button className="icon-button close" onClick={onClose} aria-label="Ereignis einklappen">×</button><div className="event-art"><img src={field.illustration} alt="Originalillustration des Feldes" /><b>Feld {field.fieldNumber}</b></div><div className="event-copy"><p className="eyebrow">{field.date || "AVEGA Geschichte"}</p><h2>{field.title}</h2><p>{field.description}</p><div className="event-action"><span>Spielaktion für {player?.name}</span><strong>{field.actionLabel}</strong></div></div></div>;
 }
 
 function Game({ state, me, act, error, localMode = false }: { state: GameState; me: string; act: (action: string, extra?: object) => Promise<void>; error: string; localMode?: boolean }) {
   const active = state.players.find((entry) => entry.id === state.activePlayer)!; const ownTurn = localMode || active?.id === me; const [rolling, setRolling] = useState(false); const [animatedFace, setAnimatedFace] = useState(5);
-  const [dismissedEvent, setDismissedEvent] = useState(""); const [sound, setSound] = useState(true); const [positions, setPositions] = useState<Record<string, number>>(() => Object.fromEntries(state.players.map((entry) => [entry.id, entry.position])));
+  const [eventStage, setEventStage] = useState<"hidden" | "popup" | "sidebar">("hidden"); const [eventHovered, setEventHovered] = useState(false); const [sound, setSound] = useState(true); const [positions, setPositions] = useState<Record<string, number>>(() => Object.fromEntries(state.players.map((entry) => [entry.id, entry.position])));
   const seenMove = useRef("");
   useEffect(() => {
     if (!state.lastMove || seenMove.current === state.lastMove.id) { setPositions(Object.fromEntries(state.players.map((entry) => [entry.id, entry.position]))); return; }
@@ -197,9 +188,16 @@ function Game({ state, me, act, error, localMode = false }: { state: GameState; 
     const timer = window.setInterval(() => { const next = move.path[index++]; if (next) setPositions((old) => ({ ...old, [move.playerId]: next })); else { window.clearInterval(timer); setPositions(Object.fromEntries(state.players.map((entry) => [entry.id, entry.position]))); } }, 170);
     return () => window.clearInterval(timer);
   }, [state.lastMove?.id, state.players]);
+  useEffect(() => { if (state.lastMove?.id) setEventStage("hidden"); }, [state.lastMove?.id]);
+  useEffect(() => { if (state.lastEvent?.id) { setEventHovered(false); setEventStage("popup"); } }, [state.lastEvent?.id]);
+  useEffect(() => {
+    if (eventStage !== "popup" || eventHovered) return;
+    const timer = window.setTimeout(() => setEventStage("sidebar"), 4000);
+    return () => window.clearTimeout(timer);
+  }, [eventStage, eventHovered, state.lastEvent?.id]);
   async function roll() {
     if (!ownTurn || rolling) return;
-    setRolling(true);
+    setEventStage("hidden"); setEventHovered(false); setRolling(true);
     const timer = window.setInterval(() => setAnimatedFace(crypto.getRandomValues(new Uint32Array(1))[0] % 6 + 1), 75);
     await Promise.all([act("roll"), new Promise((resolve) => window.setTimeout(resolve, 850))]);
     window.clearInterval(timer); setRolling(false);
@@ -210,10 +208,11 @@ function Game({ state, me, act, error, localMode = false }: { state: GameState; 
   return <main className="game-page"><header className="game-header"><Logo /><div><span className="room-pill">{localMode ? "Ein Gerät" : state.roomCode}</span><button className="icon-button" onClick={() => setSound(!sound)} aria-label={sound ? "Ton ausschalten" : "Ton einschalten"}>{sound ? "♪" : "×"}</button></div></header>
     <div className="game-layout"><section className="board-panel"><div className="turn-banner"><span className="mini-token" style={{ background: active?.color }} /><div><small>Am Zug</small><strong>{active?.name}</strong></div><p>{state.lastAction}</p></div><Board state={state} me={localMode ? active?.id : me} displayPositions={positions} focusField={focusField} /></section>
       <aside className="game-sidebar"><div className="dice-panel"><p className="eyebrow">Zug {state.turnNumber}</p><button className={`die ${rolling ? "rolling" : ""}`} onClick={roll} disabled={!ownTurn || rolling} aria-label="Würfeln"><span>{["⚀","⚁","⚂","⚃","⚄","⚅"][(rolling ? animatedFace : state.diceResult || 5) - 1]}</span></button><h2>{localMode ? `${active?.name} ist dran.` : ownTurn ? "Du bist dran." : `${active?.name} würfelt.`}</h2><p>{localMode ? "Würfeln und danach das Gerät weitergeben." : ownTurn ? "Tippe auf den Würfel." : "Auf allen Geräten geht es gleich weiter."}</p>{error && <p className="error">{error}</p>}</div>
+        <div className={`event-dock ${eventStage === "sidebar" ? "has-event" : ""}`} aria-live="polite"><div className="panel-heading"><h3>Hinweis</h3>{eventStage === "sidebar" && state.lastEvent && <span>Feld {state.lastEvent.fieldNumber}</span>}</div>{eventStage === "sidebar" && state.lastEvent ? <div className="event-dock-content"><img src={fieldByNumber[state.lastEvent.fieldNumber].illustration} alt="" /><div><strong>{fieldByNumber[state.lastEvent.fieldNumber].title}</strong><p>{state.lastEvent.actionLabel}</p></div></div> : <p className="event-dock-empty">Beim nächsten Spezialfeld erscheint der aktuelle Hinweis hier.</p>}</div>
         <div className="score-panel"><div className="panel-heading"><h3>Auf dem Weg</h3><span>Feld</span></div>{[...state.players].sort((a,b) => b.position-a.position).map((player) => <div className="score" key={player.id}><span className="mini-token" style={{ background: player.color }} /><b>{player.name}</b><strong>{player.position}</strong></div>)}</div>
         {dev && <div className="dev-panel"><strong>Testmodus</strong><select onChange={(e) => act("dev", { fieldNumber: Number(e.target.value) })} defaultValue=""><option value="" disabled>Feld testen …</option>{fields.filter((f) => f.fieldType !== "normal").map((f) => <option key={f.fieldNumber} value={f.fieldNumber}>{f.fieldNumber} · {f.title}</option>)}</select><select onChange={(e) => act("dev", { forceDice: Number(e.target.value) })} defaultValue=""><option value="" disabled>Nächsten Wurf setzen …</option>{[1,2,3,4,5,6].map((n) => <option key={n}>{n}</option>)}</select><button className="secondary compact" onClick={() => act("dev", { addBot: true })}>Testperson hinzufügen</button></div>}
       </aside></div>
-    {state.lastEvent && dismissedEvent !== state.lastEvent.id && <EventCard state={state} onClose={() => setDismissedEvent(state.lastEvent!.id)} />}
+    {state.lastEvent && eventStage === "popup" && <EventCard state={state} onClose={() => { setEventHovered(false); setEventStage("sidebar"); }} onHoverChange={setEventHovered} />}
     {state.status === "finished" && <div className="winner-overlay"><div className="winner-card"><Logo /><div className="winner-token" style={{ background: winner?.color }} /><p className="eyebrow">Feld 100</p><h1>{winner?.name} gewinnt!</h1><p>Zehn Jahre avega. Jetzt wird angestossen.</p>{localMode || me === state.hostId ? <button className="primary" onClick={() => act("rematch")}>Revanche</button> : <p>Die Raumleitung kann eine Revanche starten.</p>}</div></div>}
   </main>;
 }
