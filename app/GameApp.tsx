@@ -197,10 +197,10 @@ function Board({ state, me, displayPositions, motionPositions, focusField }: { s
     return Array.from({ length: 10 }, (_, col) => gameRow % 2 === 0 ? gameRow * 10 + col + 1 : gameRow * 10 + (10 - col));
   }).flat(), []);
   return <div className="board-viewport" ref={boardRef}><div className="board" aria-label="AVEGA Spielfeld mit 100 Feldern">
-    {ordered.map((number) => { const field = fieldByNumber[number]; const occupants = state.players.filter((player) => !motionPositions[player.id] && displayPositions[player.id] === number);
+    {ordered.map((number) => { const field = fieldByNumber[number]; const occupants = state.players.filter((player) => !motionPositions[player.id] && displayPositions[player.id] === number); const crowded = occupants.length > 6;
       return <div key={number} data-field={number} aria-label={`Feld ${number}${field.fieldType !== "normal" ? ", Spezialfeld" : ""}`} className={`field ${field.fieldType} ${number === focusField ? "focused" : ""}`}>
         <span className="field-number">{number}</span>
-        <div className="tokens">{occupants.map((player, index) => <span key={player.id} className={`token ${player.id === me ? "mine" : ""}`} style={{ background: pawnColor(player.color), transform: `translate(${(index % 3) * 7 - 7}px, ${Math.floor(index / 3) * 7}px)` }} title={player.name}><i /></span>)}</div>
+        <div className={`tokens ${crowded ? "crowded" : ""}`}>{occupants.map((player, index) => <span key={player.id} className={`token ${player.id === me ? "mine" : ""}`} style={{ background: pawnColor(player.color), ...(crowded ? {} : { transform: `translate(${(index % 3) * 7 - 7}px, ${Math.floor(index / 3) * 7}px)` }) }} title={player.name}><i /></span>)}</div>
       </div>;
     })}
     {Object.entries(motionPositions).map(([playerId, point]) => { const player = state.players.find((entry) => entry.id === playerId); return player ? <span key={playerId} className={`token moving-token ${playerId === me ? "mine" : ""}`} style={{ background: pawnColor(player.color), left: `${point.x}%`, top: `${point.y}%` }} title={player.name}><i /></span> : null; })}
