@@ -207,19 +207,14 @@ function Board({ state, me, displayPositions, motionPositions, focusField }: { s
   </div></div>;
 }
 
-function EventCard({ state, onClose, onHoverChange }: { state: GameState; onClose: () => void; onHoverChange: (hovering: boolean) => void }) {
-  if (!state.lastEvent) return null; const field = fieldByNumber[state.lastEvent.fieldNumber];
-  return <div className="event-card" role="dialog" aria-live="polite" onMouseEnter={() => onHoverChange(true)} onMouseLeave={() => onHoverChange(false)}><button className="icon-button close" onClick={onClose} aria-label="Ereignis einklappen">×</button><p className="eyebrow">Feld {field.fieldNumber}</p><h2>{field.title}</h2></div>;
-}
-
 function Game({ state, me, act, error, localMode = false, onExit }: { state: GameState; me: string; act: (action: string, extra?: object) => Promise<void>; error: string; localMode?: boolean; onExit: () => void }) {
   const active = state.players.find((entry) => entry.id === state.activePlayer)!; const ownTurn = localMode || active?.id === me; const [rolling, setRolling] = useState(false); const [animatedFace, setAnimatedFace] = useState(5);
-  const [eventStage, setEventStage] = useState<"hidden" | "popup" | "sidebar">("hidden"); const [eventHovered, setEventHovered] = useState(false); const [sound, setSound] = useState(true); const [positions, setPositions] = useState<Record<string, number>>(() => Object.fromEntries(state.players.map((entry) => [entry.id, entry.position]))); const [motionPositions, setMotionPositions] = useState<Record<string, BoardPoint>>({}); const [movementDoneId, setMovementDoneId] = useState(state.lastMove?.id ?? ""); const [isMoving, setIsMoving] = useState(false);
+  const [eventVisible, setEventVisible] = useState(false); const [sound, setSound] = useState(true); const [positions, setPositions] = useState<Record<string, number>>(() => Object.fromEntries(state.players.map((entry) => [entry.id, entry.position]))); const [motionPositions, setMotionPositions] = useState<Record<string, BoardPoint>>({}); const [movementDoneId, setMovementDoneId] = useState(state.lastMove?.id ?? ""); const [isMoving, setIsMoving] = useState(false);
   const seenMove = useRef(state.lastMove?.id ?? "");
   useEffect(() => {
     if (!state.lastMove || seenMove.current === state.lastMove.id) return;
     seenMove.current = state.lastMove.id; const move = state.lastMove; const finalPositions = Object.fromEntries(state.players.map((entry) => [entry.id, entry.position])); let cancelled = false;
-    setMovementDoneId(""); setIsMoving(true); setEventStage("hidden"); setMotionPositions((old) => { const next = { ...old }; delete next[move.playerId]; return next; });
+    setMovementDoneId(""); setIsMoving(true); setEventVisible(false); setMotionPositions((old) => { const next = { ...old }; delete next[move.playerId]; return next; });
     const pause = (duration: number) => new Promise((resolve) => window.setTimeout(resolve, duration));
     async function animate() {
       for (const next of move.path) { await pause(320); if (cancelled) return; setPositions((old) => ({ ...old, [move.playerId]: next })); }
@@ -234,20 +229,15 @@ function Game({ state, me, act, error, localMode = false, onExit }: { state: Gam
     void animate();
     return () => { cancelled = true; };
   }, [state.lastMove?.id]);
-  useEffect(() => { if (state.lastMove?.id) setEventStage("hidden"); }, [state.lastMove?.id]);
+  useEffect(() => { if (state.lastMove?.id) setEventVisible(false); }, [state.lastMove?.id]);
   useEffect(() => {
     const move = state.lastMove; const event = state.lastEvent;
     const belongsToMove = Boolean(move && event && event.playerId === move.playerId && event.fieldNumber === move.path.at(-1));
-    if (belongsToMove && movementDoneId === move?.id) { setEventHovered(false); setEventStage("popup"); }
+    if (belongsToMove && movementDoneId === move?.id) setEventVisible(true);
   }, [state.lastEvent?.id, state.lastMove?.id, movementDoneId]);
-  useEffect(() => {
-    if (eventStage !== "popup" || eventHovered) return;
-    const timer = window.setTimeout(() => setEventStage("sidebar"), 4000);
-    return () => window.clearTimeout(timer);
-  }, [eventStage, eventHovered, state.lastEvent?.id]);
   async function roll() {
     if (!ownTurn || rolling || isMoving) return;
-    setEventStage("hidden"); setEventHovered(false); setRolling(true);
+    setEventVisible(false); setRolling(true);
     const timer = window.setInterval(() => setAnimatedFace(crypto.getRandomValues(new Uint32Array(1))[0] % 6 + 1), 75);
     await Promise.all([act("roll"), new Promise((resolve) => window.setTimeout(resolve, 850))]);
     window.clearInterval(timer); setRolling(false);
@@ -258,11 +248,10 @@ function Game({ state, me, act, error, localMode = false, onExit }: { state: Gam
   return <main className="game-page"><header className="game-header"><Logo /><div><button className="back-button" onClick={onExit}>← Startmenü</button><span className="room-pill">{localMode ? "Ein Gerät" : state.roomCode}</span><button className="icon-button" onClick={() => setSound(!sound)} aria-label={sound ? "Ton ausschalten" : "Ton einschalten"}>{sound ? "♪" : "×"}</button></div></header>
     <div className="game-layout"><section className="board-panel"><div className="turn-banner"><span className="mini-token" style={{ background: pawnColor(active?.color || playerColors[0]) }} /><div><small>Am Zug</small><strong>{active?.name}</strong></div><p>{state.lastAction}</p></div><Board state={state} me={localMode ? active?.id : me} displayPositions={positions} motionPositions={motionPositions} focusField={focusField} /></section>
       <aside className="game-sidebar"><div className="dice-panel"><p className="eyebrow">Zug {state.turnNumber}</p><button className={`die ${rolling ? "rolling" : ""}`} onClick={roll} disabled={!ownTurn || rolling || isMoving} aria-label="Würfeln"><span>{["⚀","⚁","⚂","⚃","⚄","⚅"][(rolling ? animatedFace : state.diceResult || 5) - 1]}</span></button><h2>{isMoving ? "Figur ist unterwegs …" : localMode ? `${active?.name} ist dran.` : ownTurn ? "Du bist dran." : `${active?.name} würfelt.`}</h2><p>{isMoving ? "Die Figur folgt dem Spielweg." : localMode ? "Würfeln und danach das Gerät weitergeben." : ownTurn ? "Tippe auf den Würfel." : "Auf allen Geräten geht es gleich weiter."}</p>{error && <p className="error">{error}</p>}</div>
-        <div className={`event-dock ${eventStage === "sidebar" ? "has-event" : ""}`} aria-live="polite"><div className="panel-heading"><h3>Hinweis</h3>{eventStage === "sidebar" && state.lastEvent && <span>Feld {state.lastEvent.fieldNumber}</span>}</div>{eventStage === "sidebar" && state.lastEvent ? <div className="event-dock-content"><p className="eyebrow">{fieldByNumber[state.lastEvent.fieldNumber].date || "AVEGA Geschichte"}</p><strong>{fieldByNumber[state.lastEvent.fieldNumber].title}</strong><p className="event-description">{fieldByNumber[state.lastEvent.fieldNumber].description}</p><div className="event-dock-action"><span>Spielaktion</span><b>{state.lastEvent.actionLabel}</b></div></div> : <p className="event-dock-empty">Beim nächsten Spezialfeld erscheint der aktuelle Hinweis hier.</p>}</div>
+        <div className={`event-dock ${eventVisible ? "has-event" : ""}`} aria-live="polite"><div className="panel-heading"><h3>Hinweis</h3>{eventVisible && state.lastEvent && <span>Feld {state.lastEvent.fieldNumber}</span>}</div>{eventVisible && state.lastEvent ? <div className="event-dock-content"><p className="eyebrow">{fieldByNumber[state.lastEvent.fieldNumber].date || "AVEGA Geschichte"}</p><strong>{fieldByNumber[state.lastEvent.fieldNumber].title}</strong><p className="event-description">{fieldByNumber[state.lastEvent.fieldNumber].description}</p><div className="event-dock-action"><span>Spielaktion</span><b>{state.lastEvent.actionLabel}</b></div></div> : <p className="event-dock-empty">Beim nächsten Spezialfeld erscheint der aktuelle Hinweis hier.</p>}</div>
         <div className="score-panel"><div className="panel-heading"><h3>Auf dem Weg</h3><span>Feld</span></div>{[...state.players].sort((a,b) => b.position-a.position).map((player) => <div className="score" key={player.id}><span className="mini-token" style={{ background: pawnColor(player.color) }} /><b>{player.name}</b><strong>{player.position}</strong></div>)}</div>
         {dev && <div className="dev-panel"><strong>Testmodus</strong><select onChange={(e) => act("dev", { fieldNumber: Number(e.target.value) })} defaultValue=""><option value="" disabled>Feld testen …</option>{fields.filter((f) => f.fieldType !== "normal").map((f) => <option key={f.fieldNumber} value={f.fieldNumber}>{f.fieldNumber} · {f.title}</option>)}</select><select onChange={(e) => act("dev", { forceDice: Number(e.target.value) })} defaultValue=""><option value="" disabled>Nächsten Wurf setzen …</option>{[1,2,3,4,5,6].map((n) => <option key={n}>{n}</option>)}</select><button className="secondary compact" onClick={() => act("dev", { addBot: true })}>Testperson hinzufügen</button></div>}
       </aside></div>
-    {state.lastEvent && eventStage === "popup" && <EventCard state={state} onClose={() => { setEventHovered(false); setEventStage("sidebar"); }} onHoverChange={setEventHovered} />}
     {state.status === "finished" && <div className="winner-overlay"><div className="winner-card"><Logo /><div className="winner-token" style={{ background: pawnColor(winner?.color || playerColors[0]) }} /><p className="eyebrow">Feld 100</p><h1>{winner?.name} gewinnt!</h1><p>Zehn Jahre avega. Jetzt wird angestossen.</p>{localMode || me === state.hostId ? <button className="primary" onClick={() => act("rematch")}>Revanche</button> : <p>Die Raumleitung kann eine Revanche starten.</p>}</div></div>}
   </main>;
 }
