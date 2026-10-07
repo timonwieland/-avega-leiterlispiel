@@ -287,7 +287,18 @@ export default function GameApp() {
   const [modal, setModal] = useState<"create" | "join" | "local" | "rules" | null>(null); const [state, setState] = useState<GameState | null>(null); const [playerId, setPlayerId] = useState(""); const [error, setError] = useState(""); const [localMode, setLocalMode] = useState(false); const [atStart, setAtStart] = useState(false);
   useEffect(() => {
     const room = new URLSearchParams(window.location.search).get("room") || "";
-    if (room) { setPreset(room); setModal("join"); }
+    if (room) { setPreset(room); setModal("join"); return; }
+    const saved = localStorage.getItem("avega:resume");
+    if (!saved) return;
+    try {
+      const session = JSON.parse(saved) as { mode?: "online" | "local"; roomCode?: string; playerId?: string; state?: GameState; atStart?: boolean };
+      if (session.mode === "local" && session.state) {
+        setState(session.state); setPlayerId("local"); setLocalMode(true); setAtStart(Boolean(session.atStart));
+      } else if (session.mode === "online" && session.roomCode && session.playerId) {
+        localStorage.setItem(`avega:${session.roomCode.toUpperCase()}`, session.playerId);
+        setPreset(session.roomCode); setAtStart(Boolean(session.atStart));
+      }
+    } catch { localStorage.removeItem("avega:resume"); }
   }, []);
   useEffect(() => {
     if (!preset || state) return;
@@ -295,8 +306,15 @@ export default function GameApp() {
     if (!stored) return;
     api(`/api/rooms/${preset}/join`, { method: "POST", body: JSON.stringify({ playerId: stored }) })
       .then((payload) => { setState(payload.state); setPlayerId(payload.playerId); setModal(null); })
-      .catch(() => localStorage.removeItem(`avega:${preset.toUpperCase()}`));
+      .catch(() => { localStorage.removeItem(`avega:${preset.toUpperCase()}`); localStorage.removeItem("avega:resume"); setPreset(""); setAtStart(false); });
   }, [preset, state]);
+  useEffect(() => {
+    if (!state || !playerId) return;
+    const session = localMode
+      ? { mode: "local", state, atStart }
+      : { mode: "online", roomCode: state.roomCode, playerId, atStart };
+    localStorage.setItem("avega:resume", JSON.stringify(session));
+  }, [state, playerId, localMode, atStart]);
   useEffect(() => { if (!state || !playerId || localMode) return; const timer = window.setInterval(async () => { try { const payload = await api(`/api/rooms/${state.roomCode}?playerId=${playerId}`); setState(payload.state); setError(""); } catch (reason) { setError(reason instanceof Error ? reason.message : "Verbindung unterbrochen."); } }, 900); return () => window.clearInterval(timer); }, [state?.roomCode, playerId, localMode]);
   async function act(action: string, extra = {}) { if (!state) return; if (localMode) { setState((current) => current ? localAction(current, action, extra) : current); return; } try { const payload = await api(`/api/rooms/${state.roomCode}/action`, { method: "POST", body: JSON.stringify({ action, playerId, ...extra }) }); setState(payload.state); setError(""); } catch (reason) { setError(reason instanceof Error ? reason.message : "Bitte versuche es nochmals."); } }
   function exitToStart() { history.replaceState(null, "", "/"); setPreset(""); setModal(null); setError(""); setAtStart(true); }
