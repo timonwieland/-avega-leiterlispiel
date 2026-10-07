@@ -209,32 +209,32 @@ function Board({ state, me, displayPositions, motionPositions, focusField }: { s
 
 function Game({ state, me, act, error, localMode = false, onExit }: { state: GameState; me: string; act: (action: string, extra?: object) => Promise<void>; error: string; localMode?: boolean; onExit: () => void }) {
   const active = state.players.find((entry) => entry.id === state.activePlayer)!; const ownTurn = localMode || active?.id === me; const [rolling, setRolling] = useState(false); const [animatedFace, setAnimatedFace] = useState(5);
-  const [eventVisible, setEventVisible] = useState(false); const [sound, setSound] = useState(true); const [positions, setPositions] = useState<Record<string, number>>(() => Object.fromEntries(state.players.map((entry) => [entry.id, entry.position]))); const [motionPositions, setMotionPositions] = useState<Record<string, BoardPoint>>({}); const [movementDoneId, setMovementDoneId] = useState(state.lastMove?.id ?? ""); const [isMoving, setIsMoving] = useState(false);
+  const [eventVisible, setEventVisible] = useState(false); const [sound, setSound] = useState(true); const [positions, setPositions] = useState<Record<string, number>>(() => Object.fromEntries(state.players.map((entry) => [entry.id, entry.position]))); const [motionPositions, setMotionPositions] = useState<Record<string, BoardPoint>>({}); const [isMoving, setIsMoving] = useState(false);
   const seenMove = useRef(state.lastMove?.id ?? "");
   useEffect(() => {
     if (!state.lastMove || seenMove.current === state.lastMove.id) return;
     seenMove.current = state.lastMove.id; const move = state.lastMove; const finalPositions = Object.fromEntries(state.players.map((entry) => [entry.id, entry.position])); let cancelled = false;
-    setMovementDoneId(""); setIsMoving(true); setEventVisible(false); setMotionPositions((old) => { const next = { ...old }; delete next[move.playerId]; return next; });
+    setIsMoving(true); setEventVisible(false); setMotionPositions((old) => { const next = { ...old }; delete next[move.playerId]; return next; });
     const pause = (duration: number) => new Promise((resolve) => window.setTimeout(resolve, duration));
     async function animate() {
       for (const next of move.path) { await pause(320); if (cancelled) return; setPositions((old) => ({ ...old, [move.playerId]: next })); }
       const landing = move.path.at(-1); const finalField = finalPositions[move.playerId];
+      const event = state.lastEvent;
+      const hasCurrentEvent = Boolean(landing && event && event.playerId === move.playerId && event.fieldNumber === landing);
+      if (hasCurrentEvent) setEventVisible(true);
       if (landing && finalField && landing !== finalField) {
+        await pause(2200);
+        if (cancelled) return;
         for (const point of specialMotionPath(landing, finalField)) { await pause(75); if (cancelled) return; setMotionPositions((old) => ({ ...old, [move.playerId]: point })); }
       }
       if (cancelled) return;
       setMotionPositions((old) => { const next = { ...old }; delete next[move.playerId]; return next; });
-      setPositions(finalPositions); setMovementDoneId(move.id); setIsMoving(false);
+      setPositions(finalPositions); setIsMoving(false);
     }
     void animate();
     return () => { cancelled = true; };
   }, [state.lastMove?.id]);
   useEffect(() => { if (state.lastMove?.id) setEventVisible(false); }, [state.lastMove?.id]);
-  useEffect(() => {
-    const move = state.lastMove; const event = state.lastEvent;
-    const belongsToMove = Boolean(move && event && event.playerId === move.playerId && event.fieldNumber === move.path.at(-1));
-    if (belongsToMove && movementDoneId === move?.id) setEventVisible(true);
-  }, [state.lastEvent?.id, state.lastMove?.id, movementDoneId]);
   async function roll() {
     if (!ownTurn || rolling || isMoving) return;
     setEventVisible(false); setRolling(true);
