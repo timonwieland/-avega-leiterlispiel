@@ -243,6 +243,7 @@ async function api(request: Request, env: Env, url: URL) {
       state.status = "playing"; state.activePlayer = state.playerOrder[0]; state.turnNumber = 1; state.lastAction = `${state.players[0].name} beginnt.`;
     } else if (action === "roll") {
       if (state.status !== "playing" || state.activePlayer !== playerId || state.turnState !== "waiting") return json({ error: "Gerade ist eine andere Person am Zug." }, 409);
+      state.lastEvent = null;
       const forced = Number(state.specialActions.forcedDice);
       const rolled = forced >= 1 && forced <= 6 ? forced : die();
       delete state.specialActions.forcedDice;
