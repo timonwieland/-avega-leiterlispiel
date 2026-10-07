@@ -236,7 +236,7 @@ function Game({ state, me, act, error, localMode = false, onExit }: { state: Gam
       const hasCurrentEvent = Boolean(landing && event && event.playerId === move.playerId && event.fieldNumber === landing);
       if (hasCurrentEvent) setEventVisible(true);
       if (landing && finalField && landing !== finalField) {
-        await pause(2200);
+        await pause(1700);
         if (cancelled) return;
         for (const point of specialMotionPath(landing, finalField)) { await pause(75); if (cancelled) return; setMotionPositions((old) => ({ ...old, [move.playerId]: point })); }
       }
