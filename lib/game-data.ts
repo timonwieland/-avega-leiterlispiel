@@ -104,4 +104,4 @@ export function exactFinishPath(from: number, distance: number) {
   return path;
 }
 
-export const playerColors = ["#95C11F", "#F28C28", "#70777C", "#F5F3EA", "#C43F5F", "#74489D", "#E3B321", "#3F8C62"];
+export const playerColors = ["#95C11F", "#F28C28", "#70777C", "#25292C", "#C43F5F", "#74489D", "#E3B321", "#3F8C62"];

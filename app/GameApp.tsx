@@ -24,7 +24,12 @@ function Logo() {
 }
 
 const newId = () => crypto.randomUUID();
-const pawnColor = (color: string) => ["#0069b4", "#0b70b7", "#0874bb"].includes(color.toLowerCase()) ? playerColors[0] : color;
+const pawnColor = (color: string) => {
+  const normalized = color.toLowerCase();
+  if (["#0069b4", "#0b70b7", "#0874bb"].includes(normalized)) return playerColors[0];
+  if (["#f5f3ea", "#ffffff", "white"].includes(normalized)) return "#25292C";
+  return color;
+};
 
 function fieldCenter(fieldNumber: number): BoardPoint {
   const zero = fieldNumber - 1; const gameRow = Math.floor(zero / 10); const offset = zero % 10;
@@ -156,11 +161,12 @@ function LocalSetup({ onDone, onCancel }: { onDone: (state: GameState) => void; 
   return <Dialog title="Auf einem Gerät spielen" onClose={onCancel}><form className="entry-form" onSubmit={submit}><p className="local-intro">Reicht das Gerät nach jedem Zug weiter. Eine Lobby oder Internetverbindung ist dafür nicht nötig.</p><div className="local-player-list">{names.map((name, index) => <label key={index}><span className="mini-token" style={{ background: playerColors[index] }} />Spieler {index + 1}<input value={name} onChange={(event) => setNames((old) => old.map((entry, i) => i === index ? event.target.value : entry))} placeholder={`Name ${index + 1}`} maxLength={24} autoFocus={index === 0} /></label>)}</div><div className="local-buttons">{names.length < 8 && <button type="button" className="secondary compact" onClick={() => setNames((old) => [...old, ""])}>+ Person</button>}{names.length > 2 && <button type="button" className="text-button" onClick={() => setNames((old) => old.slice(0, -1))}>Letzte entfernen</button>}</div><button className="primary wide">Lokales Spiel starten</button></form></Dialog>;
 }
 
-function StartScreen({ onCreate, onJoin, onLocal, onRules }: { onCreate: () => void; onJoin: () => void; onLocal: () => void; onRules: () => void }) {
+function StartScreen({ onCreate, onJoin, onLocal, onRules, onResume, resumeLabel }: { onCreate: () => void; onJoin: () => void; onLocal: () => void; onRules: () => void; onResume?: () => void; resumeLabel?: string }) {
   return <main className="start-screen">
     <header className="topbar"><Logo /><button className="text-button" onClick={onRules}>Spielregeln</button></header>
     <section className="hero">
       <div className="hero-copy"><p className="eyebrow">10 Jahre · 100 Felder · eine Geschichte</p><h1>Das AVEGA<br /><em>Leiterspiel.</em></h1><p className="lede">Gemeinsam würfeln, AVEGA-Geschichten entdecken und als erste Person Feld 100 erreichen.</p>
+        {onResume && <button className="resume-game" onClick={onResume}><span><b>Angefangenes Spiel fortsetzen</b><small>{resumeLabel}</small></span><strong>→</strong></button>}
         <div className="hero-actions"><button className="primary" onClick={onCreate}>Online-Spiel erstellen <span>↗</span></button><button className="secondary" onClick={onJoin}>Online beitreten</button><button className="secondary local-play" onClick={onLocal}>Auf einem Gerät spielen</button></div>
         <div className="facts"><span>2–8 Spielende</span><span>Keine Anmeldung</span><span>Direkt im Browser</span></div>
       </div>
@@ -191,6 +197,8 @@ function Lobby({ state, me, act, error, onExit }: { state: GameState; me: string
 
 function Board({ state, me, displayPositions, motionPositions, focusField }: { state: GameState; me: string; displayPositions: Record<string, number>; motionPositions: Record<string, BoardPoint>; focusField: number }) {
   const boardRef = useRef<HTMLDivElement>(null);
+  const focusedPlayer = state.players.find((player) => player.id === (state.lastMove?.playerId || state.activePlayer));
+  const focusColor = pawnColor(focusedPlayer?.color || playerColors[0]);
   useEffect(() => { boardRef.current?.querySelector(`[data-field="${focusField}"]`)?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" }); }, [focusField]);
   const ordered = useMemo(() => Array.from({ length: 10 }, (_, visualRow) => {
     const gameRow = 9 - visualRow;
@@ -198,7 +206,7 @@ function Board({ state, me, displayPositions, motionPositions, focusField }: { s
   }).flat(), []);
   return <div className="board-viewport" ref={boardRef}><div className="board" aria-label="AVEGA Spielfeld mit 100 Feldern">
     {ordered.map((number) => { const field = fieldByNumber[number]; const occupants = state.players.filter((player) => !motionPositions[player.id] && displayPositions[player.id] === number); const crowded = occupants.length > 6;
-      return <div key={number} data-field={number} aria-label={`Feld ${number}${field.fieldType !== "normal" ? ", Spezialfeld" : ""}`} className={`field ${field.fieldType} ${number === focusField ? "focused" : ""}`}>
+      return <div key={number} data-field={number} aria-label={`Feld ${number}${field.fieldType !== "normal" ? ", Spezialfeld" : ""}`} className={`field ${field.fieldType} ${number === focusField ? "focused" : ""}`} style={number === focusField ? { "--focus-color": focusColor } as React.CSSProperties : undefined}>
         <span className="field-number">{number}</span>
         <div className={`tokens ${crowded ? "crowded" : ""}`}>{occupants.map((player, index) => <span key={player.id} className={`token ${player.id === me ? "mine" : ""}`} style={{ background: pawnColor(player.color), ...(crowded ? {} : { transform: `translate(${(index % 3) * 7 - 7}px, ${Math.floor(index / 3) * 7}px)` }) }} title={player.name}><i /></span>)}</div>
       </div>;
@@ -262,7 +270,7 @@ function Rules({ onClose }: { onClose: () => void }) {
 
 export default function GameApp() {
   const [preset, setPreset] = useState("");
-  const [modal, setModal] = useState<"create" | "join" | "local" | "rules" | null>(null); const [state, setState] = useState<GameState | null>(null); const [playerId, setPlayerId] = useState(""); const [error, setError] = useState(""); const [localMode, setLocalMode] = useState(false);
+  const [modal, setModal] = useState<"create" | "join" | "local" | "rules" | null>(null); const [state, setState] = useState<GameState | null>(null); const [playerId, setPlayerId] = useState(""); const [error, setError] = useState(""); const [localMode, setLocalMode] = useState(false); const [atStart, setAtStart] = useState(false);
   useEffect(() => {
     const room = new URLSearchParams(window.location.search).get("room") || "";
     if (room) { setPreset(room); setModal("join"); }
@@ -277,7 +285,8 @@ export default function GameApp() {
   }, [preset, state]);
   useEffect(() => { if (!state || !playerId || localMode) return; const timer = window.setInterval(async () => { try { const payload = await api(`/api/rooms/${state.roomCode}?playerId=${playerId}`); setState(payload.state); setError(""); } catch (reason) { setError(reason instanceof Error ? reason.message : "Verbindung unterbrochen."); } }, 900); return () => window.clearInterval(timer); }, [state?.roomCode, playerId, localMode]);
   async function act(action: string, extra = {}) { if (!state) return; if (localMode) { setState((current) => current ? localAction(current, action, extra) : current); return; } try { const payload = await api(`/api/rooms/${state.roomCode}/action`, { method: "POST", body: JSON.stringify({ action, playerId, ...extra }) }); setState(payload.state); setError(""); } catch (reason) { setError(reason instanceof Error ? reason.message : "Bitte versuche es nochmals."); } }
-  function exitToStart() { history.replaceState(null, "", "/"); setPreset(""); setModal(null); setState(null); setPlayerId(""); setError(""); setLocalMode(false); }
-  if (!state) return <><StartScreen onCreate={() => setModal("create")} onJoin={() => setModal("join")} onLocal={() => setModal("local")} onRules={() => setModal("rules")} />{(modal === "create" || modal === "join") && <EntryForm mode={modal} presetCode={preset} onDone={(next, id) => { history.replaceState(null, "", `/?room=${next.roomCode}`); setState(next); setPlayerId(id); setModal(null); }} onCancel={() => setModal(null)} />}{modal === "local" && <LocalSetup onDone={(next) => { history.replaceState(null, "", "/"); setLocalMode(true); setState(next); setPlayerId("local"); setModal(null); }} onCancel={() => setModal(null)} />}{modal === "rules" && <Rules onClose={() => setModal(null)} />}</>;
+  function exitToStart() { history.replaceState(null, "", "/"); setPreset(""); setModal(null); setError(""); setAtStart(true); }
+  function resumeGame() { setAtStart(false); setModal(null); history.replaceState(null, "", localMode ? "/" : `/?room=${state?.roomCode || ""}`); }
+  if (!state || atStart) return <><StartScreen onCreate={() => setModal("create")} onJoin={() => setModal("join")} onLocal={() => setModal("local")} onRules={() => setModal("rules")} onResume={state ? resumeGame : undefined} resumeLabel={state ? `${localMode ? "Lokales Spiel" : `Raum ${state.roomCode}`} · Zug ${state.turnNumber}` : undefined} />{(modal === "create" || modal === "join") && <EntryForm mode={modal} presetCode={preset} onDone={(next, id) => { history.replaceState(null, "", `/?room=${next.roomCode}`); setState(next); setPlayerId(id); setLocalMode(false); setAtStart(false); setModal(null); }} onCancel={() => setModal(null)} />}{modal === "local" && <LocalSetup onDone={(next) => { history.replaceState(null, "", "/"); setLocalMode(true); setState(next); setPlayerId("local"); setAtStart(false); setModal(null); }} onCancel={() => setModal(null)} />}{modal === "rules" && <Rules onClose={() => setModal(null)} />}</>;
   return state.status === "lobby" ? <Lobby state={state} me={playerId} act={act} error={error} onExit={exitToStart} /> : <Game state={state} me={playerId} act={act} error={error} localMode={localMode} onExit={exitToStart} />;
 }
