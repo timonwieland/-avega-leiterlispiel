@@ -169,7 +169,7 @@ function StartScreen({ onCreate, onJoin, onLocal, onRules, onResume, resumeLabel
   return <main className="start-screen">
     <header className="topbar"><Logo /><button className="text-button" onClick={onRules}>Spielregeln</button></header>
     <section className="hero">
-      <div className="hero-copy"><p className="eyebrow">10 Jahre · 100 Felder · eine Geschichte</p><h1>Das AVEGA<br /><em>Leiterspiel.</em></h1><p className="lede">Gemeinsam würfeln, AVEGA-Geschichten entdecken und als erste Person Feld 100 erreichen.</p>
+      <div className="hero-copy"><p className="eyebrow">10 Jahre · 100 Felder · eine Geschichte</p><h1>Das avega<br /><em>Leiterspiel.</em></h1><p className="lede">Gemeinsam würfeln, avega-Geschichten entdecken und als erste Person Feld 100 erreichen.</p>
         {onResume && <button className="resume-game" onClick={onResume}><span><b>Angefangenes Spiel fortsetzen</b><small>{resumeLabel}</small></span><strong>→</strong></button>}
         <div className="hero-actions"><button className="primary" onClick={onCreate}>Online-Spiel erstellen <span>↗</span></button><button className="secondary" onClick={onJoin}>Online beitreten</button><button className="secondary local-play" onClick={onLocal}>Auf einem Gerät spielen</button></div>
         <div className="facts"><span>2–8 Spielende</span><span>Keine Anmeldung</span><span>Direkt im Browser</span></div>
