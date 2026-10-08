@@ -174,7 +174,7 @@ function StartScreen({ onCreate, onJoin, onLocal, onRules, onResume, resumeLabel
         <div className="hero-actions"><button className="primary" onClick={onCreate}>Online-Spiel erstellen <span>↗</span></button><button className="secondary" onClick={onJoin}>Online beitreten</button><button className="secondary local-play" onClick={onLocal}>Auf einem Gerät spielen</button></div>
         <div className="facts"><span>2–8 Spielende</span><span>Keine Anmeldung</span><span>Direkt im Browser</span></div>
       </div>
-      <div className="hero-board" aria-hidden="true"><img src="/avega-board-reference.png" alt="" /><div className="hero-token one" /><div className="hero-token two" /><div className="mini-die">⚄</div></div>
+      <div className="hero-board" aria-hidden="true"><img src="/avega-board-reference.png" alt="" /><div className="hero-token one" /><div className="hero-token two" /><div className="hero-die"><DieFace value={5} /></div></div>
     </section>
     <footer><span>Eine digitale Reise durch zehn Jahre avega.</span><span>passion for IT.</span></footer>
   </main>;
