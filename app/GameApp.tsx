@@ -345,6 +345,27 @@ export default function GameApp() {
   const [preset, setPreset] = useState("");
   const [modal, setModal] = useState<"create" | "join" | "local" | "rules" | null>(null); const [state, setState] = useState<GameState | null>(null); const [playerId, setPlayerId] = useState(""); const [error, setError] = useState(""); const [localMode, setLocalMode] = useState(false); const [atStart, setAtStart] = useState(false);
   useEffect(() => {
+    if (window.self === window.top) return;
+    document.documentElement.classList.add("avega-embedded");
+    let frame = 0; let lastHeight = 0; let targetOrigin = "*";
+    try { if (document.referrer) targetOrigin = new URL(document.referrer).origin; } catch { /* Use the harmless wildcard fallback for height messages only. */ }
+    const reportHeight = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const height = Math.ceil(Math.max(document.body.scrollHeight, document.documentElement.scrollHeight));
+        if (Math.abs(height - lastHeight) < 2) return;
+        lastHeight = height;
+        window.parent.postMessage({ type: "avega-leiterspiel:resize", height }, targetOrigin);
+      });
+    };
+    const observer = new ResizeObserver(reportHeight);
+    observer.observe(document.body);
+    window.addEventListener("load", reportHeight);
+    window.addEventListener("resize", reportHeight);
+    reportHeight();
+    return () => { observer.disconnect(); window.removeEventListener("load", reportHeight); window.removeEventListener("resize", reportHeight); window.cancelAnimationFrame(frame); document.documentElement.classList.remove("avega-embedded"); };
+  }, []);
+  useEffect(() => {
     const room = new URLSearchParams(window.location.search).get("room") || "";
     if (room) { setPreset(room); setModal("join"); return; }
     const saved = localStorage.getItem("avega:resume");

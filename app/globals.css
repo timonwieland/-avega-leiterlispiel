@@ -4,6 +4,9 @@
 * { box-sizing:border-box; }
 html { background:var(--cream); color:var(--ink); }
 body { margin:0; font-family:Arial,"Helvetica Neue",sans-serif; min-height:100vh; }
+html.avega-embedded body { min-height:0; }
+html.avega-embedded .start-screen,html.avega-embedded .lobby-page,html.avega-embedded .game-page { min-height:0; }
+html.avega-embedded:fullscreen body,html.avega-embedded:fullscreen .start-screen,html.avega-embedded:fullscreen .lobby-page,html.avega-embedded:fullscreen .game-page { min-height:100vh; }
 button,input,select { font:inherit; }
 button { cursor:pointer; }
 button:focus-visible,input:focus-visible,select:focus-visible { outline:3px solid #f5a623; outline-offset:3px; }
