@@ -347,14 +347,18 @@ function Rules({ onClose }: { onClose: () => void }) {
 function FullscreenButton() {
   const [active, setActive] = useState(false);
   const [supported, setSupported] = useState(false);
+  const [standaloneFallback, setStandaloneFallback] = useState(false);
   useEffect(() => {
     const sync = () => setActive(Boolean(document.fullscreenElement));
     setSupported(Boolean(document.fullscreenEnabled && document.documentElement.requestFullscreen));
+    setStandaloneFallback(new URLSearchParams(window.location.search).get("avegaFullscreen") === "1");
     document.addEventListener("fullscreenchange", sync);
     sync();
     return () => document.removeEventListener("fullscreenchange", sync);
   }, []);
   function openStandaloneTab() {
+    const targetUrl = new URL(window.location.href);
+    targetUrl.searchParams.set("avegaFullscreen", "1");
     const next = window.open("about:blank", "_blank");
     if (!next) return;
     try {
@@ -365,20 +369,21 @@ function FullscreenButton() {
         if (session.roomCode && session.playerId) next.localStorage.setItem(`avega:${session.roomCode.toUpperCase()}`, session.playerId);
       }
       next.opener = null;
-      next.location.replace(window.location.href);
+      next.location.replace(targetUrl.href);
     } catch {
-      next.location.replace(window.location.href);
+      next.location.replace(targetUrl.href);
     }
   }
   async function toggle() {
+    if (standaloneFallback) { window.location.replace("https://www.avega.ch/leiterspiel"); return; }
     if (!supported) { openStandaloneTab(); return; }
     try {
       if (document.fullscreenElement) await document.exitFullscreen();
       else await document.documentElement.requestFullscreen();
     } catch { setSupported(false); openStandaloneTab(); }
   }
-  const label = active ? "Vollbild beenden" : supported ? "Im Vollbild öffnen" : "In einem grossen Fenster öffnen";
-  return <button className={`fullscreen-button ${active ? "active" : ""}`} onClick={toggle} aria-label={label} title={label}>
+  const label = active || standaloneFallback ? "Vollbild verlassen" : supported ? "Im Vollbild öffnen" : "In einem grossen Fenster öffnen";
+  return <button className={`fullscreen-button ${active || standaloneFallback ? "active" : ""}`} onClick={toggle} aria-label={label} title={label}>
     <span className="fullscreen-icon" aria-hidden="true"><i /><i /><i /><i /></span>
   </button>;
 }
