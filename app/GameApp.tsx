@@ -231,7 +231,7 @@ function Game({ state, me, act, error, localMode = false, onExit }: { state: Gam
   const [eventVisible, setEventVisible] = useState(false); const [sound, setSound] = useState(true); const [positions, setPositions] = useState<Record<string, number>>(() => Object.fromEntries(state.players.map((entry) => [entry.id, entry.position]))); const [motionPositions, setMotionPositions] = useState<Record<string, BoardPoint>>({}); const [isMoving, setIsMoving] = useState(false); const [motionAngle, setMotionAngle] = useState(0); const [showMotionLines, setShowMotionLines] = useState(false);
   const seenMove = useRef(state.lastMove?.id ?? "");
   useEffect(() => {
-    if (!state.lastMove || seenMove.current === state.lastMove.id) return;
+    if (rolling || !state.lastMove || seenMove.current === state.lastMove.id) return;
     seenMove.current = state.lastMove.id; const move = state.lastMove; const finalPositions = Object.fromEntries(state.players.map((entry) => [entry.id, entry.position])); let cancelled = false;
     setIsMoving(true); setEventVisible(false); setShowMotionLines(true); setMotionPositions((old) => { const next = { ...old }; delete next[move.playerId]; return next; });
     const pause = (duration: number) => new Promise((resolve) => window.setTimeout(resolve, duration));
@@ -255,7 +255,7 @@ function Game({ state, me, act, error, localMode = false, onExit }: { state: Gam
     }
     void animate();
     return () => { cancelled = true; };
-  }, [state.lastMove?.id]);
+  }, [state.lastMove?.id, rolling]);
   useEffect(() => { if (state.lastMove?.id) setEventVisible(false); }, [state.lastMove?.id]);
   async function roll() {
     if (!ownTurn || rolling || isMoving) return;
