@@ -282,6 +282,28 @@ function Rules({ onClose }: { onClose: () => void }) {
   return <Dialog title="So wird gespielt" onClose={onClose}><div className="rules"><div className="rule-cards"><article><b>Das Ziel</b><p>Wer genau auf Feld 100 landet, gewinnt. Ist der Wurf zu hoch, läuft die Figur bis 100 und die restlichen Schritte wieder zurück.</p></article><article><b>Der Zug</b><p>Würfeln, Feld für Feld ziehen, AVEGA-Ereignis erleben. Danach ist die nächste Person dran.</p></article></div><h3>Spezialfelder</h3><div className="rules-list">{fields.filter((field) => field.popupEnabled).map((field) => <div key={field.fieldNumber}><b>{field.fieldNumber}</b><span><strong>{field.title}</strong><small>{field.actionLabel}</small></span></div>)}</div></div></Dialog>;
 }
 
+function FullscreenButton() {
+  const [active, setActive] = useState(false);
+  const [supported, setSupported] = useState(true);
+  useEffect(() => {
+    const sync = () => setActive(Boolean(document.fullscreenElement));
+    setSupported(Boolean(document.fullscreenEnabled && document.documentElement.requestFullscreen));
+    document.addEventListener("fullscreenchange", sync);
+    sync();
+    return () => document.removeEventListener("fullscreenchange", sync);
+  }, []);
+  if (!supported) return null;
+  async function toggle() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await document.documentElement.requestFullscreen();
+    } catch { /* The embedding page must allow fullscreen. */ }
+  }
+  return <button className={`fullscreen-button ${active ? "active" : ""}`} onClick={toggle} aria-label={active ? "Vollbild beenden" : "Im Vollbild öffnen"} title={active ? "Vollbild beenden" : "Vollbild"}>
+    <span className="fullscreen-icon" aria-hidden="true"><i /><i /><i /><i /></span>
+  </button>;
+}
+
 export default function GameApp() {
   const [preset, setPreset] = useState("");
   const [modal, setModal] = useState<"create" | "join" | "local" | "rules" | null>(null); const [state, setState] = useState<GameState | null>(null); const [playerId, setPlayerId] = useState(""); const [error, setError] = useState(""); const [localMode, setLocalMode] = useState(false); const [atStart, setAtStart] = useState(false);
@@ -319,6 +341,8 @@ export default function GameApp() {
   async function act(action: string, extra = {}) { if (!state) return; if (localMode) { setState((current) => current ? localAction(current, action, extra) : current); return; } try { const payload = await api(`/api/rooms/${state.roomCode}/action`, { method: "POST", body: JSON.stringify({ action, playerId, ...extra }) }); setState(payload.state); setError(""); } catch (reason) { setError(reason instanceof Error ? reason.message : "Bitte versuche es nochmals."); } }
   function exitToStart() { history.replaceState(null, "", "/"); setPreset(""); setModal(null); setError(""); setAtStart(true); }
   function resumeGame() { setAtStart(false); setModal(null); history.replaceState(null, "", localMode ? "/" : `/?room=${state?.roomCode || ""}`); }
-  if (!state || atStart) return <><StartScreen onCreate={() => setModal("create")} onJoin={() => setModal("join")} onLocal={() => setModal("local")} onRules={() => setModal("rules")} onResume={state ? resumeGame : undefined} resumeLabel={state ? `${localMode ? "Lokales Spiel" : `Raum ${state.roomCode}`} · Zug ${state.turnNumber}` : undefined} />{(modal === "create" || modal === "join") && <EntryForm mode={modal} presetCode={preset} onDone={(next, id) => { history.replaceState(null, "", `/?room=${next.roomCode}`); setState(next); setPlayerId(id); setLocalMode(false); setAtStart(false); setModal(null); }} onCancel={() => setModal(null)} />}{modal === "local" && <LocalSetup onDone={(next) => { history.replaceState(null, "", "/"); setLocalMode(true); setState(next); setPlayerId("local"); setAtStart(false); setModal(null); }} onCancel={() => setModal(null)} />}{modal === "rules" && <Rules onClose={() => setModal(null)} />}</>;
-  return state.status === "lobby" ? <Lobby state={state} me={playerId} act={act} error={error} onExit={exitToStart} /> : <Game state={state} me={playerId} act={act} error={error} localMode={localMode} onExit={exitToStart} />;
+  const content = !state || atStart
+    ? <><StartScreen onCreate={() => setModal("create")} onJoin={() => setModal("join")} onLocal={() => setModal("local")} onRules={() => setModal("rules")} onResume={state ? resumeGame : undefined} resumeLabel={state ? `${localMode ? "Lokales Spiel" : `Raum ${state.roomCode}`} · Zug ${state.turnNumber}` : undefined} />{(modal === "create" || modal === "join") && <EntryForm mode={modal} presetCode={preset} onDone={(next, id) => { history.replaceState(null, "", `/?room=${next.roomCode}`); setState(next); setPlayerId(id); setLocalMode(false); setAtStart(false); setModal(null); }} onCancel={() => setModal(null)} />}{modal === "local" && <LocalSetup onDone={(next) => { history.replaceState(null, "", "/"); setLocalMode(true); setState(next); setPlayerId("local"); setAtStart(false); setModal(null); }} onCancel={() => setModal(null)} />}{modal === "rules" && <Rules onClose={() => setModal(null)} />}</>
+    : state.status === "lobby" ? <Lobby state={state} me={playerId} act={act} error={error} onExit={exitToStart} /> : <Game state={state} me={playerId} act={act} error={error} localMode={localMode} onExit={exitToStart} />;
+  return <>{content}<FullscreenButton /></>;
 }
