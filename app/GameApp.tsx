@@ -6,7 +6,7 @@ import { exactFinishPath, fieldByNumber, fields, playerColors } from "../lib/gam
 type Player = { id: string; name: string; color: string; position: number; ready: boolean; skipTurns: number; nextRollMultiplier: number; isBot?: boolean };
 type GameState = {
   roomCode: string; status: "lobby" | "playing" | "finished"; hostId: string; players: Player[]; playerOrder: string[]; activePlayer: string;
-  diceResult: number | null; winner: string | null; lastAction: string; updatedAt: number; turnNumber: number;
+  diceResult: number | null; winner: string | null; placements?: string[]; lastAction: string; updatedAt: number; turnNumber: number;
   lastEvent: { id: string; fieldNumber: number; playerId: string; actionLabel: string; affectedPlayerIds: string[] } | null;
   lastMove: { id: string; playerId: string; path: number[]; secondary?: { playerId: string; from: number; to: number } } | null;
 };
@@ -69,7 +69,7 @@ function advanceLocalTurn(state: GameState, currentIndex: number) {
   for (let offset = 1; offset <= state.playerOrder.length; offset++) {
     const id = state.playerOrder[(currentIndex + offset) % state.playerOrder.length];
     const player = state.players.find((entry) => entry.id === id);
-    if (!player) continue;
+    if (!player || player.position === 100) continue;
     if (player.skipTurns > 0) { player.skipTurns -= 1; state.lastAction += ` ${player.name} setzt diese Runde aus.`; continue; }
     state.activePlayer = id; state.turnNumber += 1; return;
   }
@@ -85,12 +85,20 @@ function applyLocalField(state: GameState, player: Player, landingField: number)
   else if (field.actionType === "extraRoll") extraRoll = true;
   else if (field.actionType === "doubleNext") { player.skipTurns += field.skipTurns ?? 1; player.nextRollMultiplier = field.nextRollMultiplier ?? 2; affected.push(player.id); }
   else if (field.actionType === "leaderBack") {
-    const lead = Math.max(...state.players.map((entry) => entry.position));
-    if (lead > 65) state.players.filter((entry) => entry.position === lead).forEach((entry) => { entry.position = 65; affected.push(entry.id); });
+    const eligible = state.players.filter((entry) => entry.position < 100);
+    const lead = eligible.length ? Math.max(...eligible.map((entry) => entry.position)) : 0;
+    if (lead > 65) eligible.filter((entry) => entry.position === lead).forEach((entry) => { entry.position = 65; affected.push(entry.id); });
   } else if (field.actionType === "swapNearest") {
-    const nearest = state.players.filter((entry) => entry.id !== player.id).sort((a, b) => Math.abs(a.position - landingField) - Math.abs(b.position - landingField) || Number(b.position > landingField) - Number(a.position > landingField) || state.playerOrder.indexOf(a.id) - state.playerOrder.indexOf(b.id))[0];
+    const nearest = state.players.filter((entry) => entry.id !== player.id && entry.position < 100).sort((a, b) => Math.abs(a.position - landingField) - Math.abs(b.position - landingField) || Number(b.position > landingField) - Number(a.position > landingField) || state.playerOrder.indexOf(a.id) - state.playerOrder.indexOf(b.id))[0];
     if (nearest) { const otherFrom = nearest.position; nearest.position = landingField; player.position = otherFrom; affected.push(player.id, nearest.id); secondary = { playerId: nearest.id, from: otherFrom, to: landingField }; }
-  } else if (field.actionType === "goal") { state.status = "finished"; state.winner = player.id; affected.push(player.id); }
+  } else if (field.actionType === "goal") {
+    state.placements ??= [];
+    if (!state.placements.includes(player.id)) state.placements.push(player.id);
+    state.winner ??= player.id;
+    const remaining = state.players.filter((entry) => entry.position < 100);
+    if (remaining.length <= 1) { state.status = "finished"; state.activePlayer = remaining[0]?.id ?? player.id; }
+    affected.push(player.id);
+  }
   state.lastEvent = { id: newId(), fieldNumber: landingField, playerId: player.id, actionLabel: field.actionLabel ?? "AVEGA Ereignis", affectedPlayerIds: affected };
   return { extraRoll, secondary };
 }
@@ -100,7 +108,7 @@ function localAction(current: GameState, action: string, extra: Record<string, u
   const player = state.players.find((entry) => entry.id === state.activePlayer)!;
   if (action === "rematch") {
     state.players.forEach((entry) => { entry.position = 1; entry.skipTurns = 0; entry.nextRollMultiplier = 1; });
-    state.status = "playing"; state.winner = null; state.diceResult = null; state.lastEvent = null; state.lastMove = null; state.activePlayer = state.playerOrder[0]; state.turnNumber = 1; state.lastAction = `${state.players[0].name} beginnt die Revanche.`;
+    state.status = "playing"; state.winner = null; state.placements = []; state.diceResult = null; state.lastEvent = null; state.lastMove = null; state.activePlayer = state.playerOrder[0]; state.turnNumber = 1; state.lastAction = `${state.players[0].name} beginnt die Revanche.`;
   } else if (action === "roll" && state.status === "playing") {
     state.lastEvent = null;
     const rolled = crypto.getRandomValues(new Uint32Array(1))[0] % 6 + 1;
@@ -111,7 +119,7 @@ function localAction(current: GameState, action: string, extra: Record<string, u
     state.lastAction = `${player.name} würfelt ${rolled}${multiplier > 1 ? ` × ${multiplier}` : ""}${bounced ? `, erreicht Feld 100 und geht zurück auf Feld ${to}.` : ` und zieht auf Feld ${to}.`}`;
     const event = applyLocalField(state, player, to);
     state.lastMove = { id: newId(), playerId: player.id, path, secondary: event.secondary };
-    if (!state.winner && !event.extraRoll) advanceLocalTurn(state, state.playerOrder.indexOf(player.id));
+    if (state.status === "playing" && !event.extraRoll) advanceLocalTurn(state, state.playerOrder.indexOf(player.id));
     else if (event.extraRoll) state.lastAction += " Nochmals würfeln!";
   } else if (action === "dev") {
     const target = Math.max(1, Math.min(100, Number(extra.fieldNumber) || 1)); player.position = target; applyLocalField(state, player, target);
@@ -160,7 +168,7 @@ function LocalSetup({ onDone, onCancel }: { onDone: (state: GameState) => void; 
   function submit(event: FormEvent) {
     event.preventDefault();
     const players = names.map((name, index) => ({ id: newId(), name: name.trim() || `Spieler ${index + 1}`, color: playerColors[index], position: 1, ready: true, skipTurns: 0, nextRollMultiplier: 1 }));
-    onDone({ roomCode: "LOKAL", status: "playing", hostId: players[0].id, players, playerOrder: players.map((player) => player.id), activePlayer: players[0].id, diceResult: null, winner: null, lastAction: `${players[0].name} beginnt.`, updatedAt: Date.now(), turnNumber: 1, lastEvent: null, lastMove: null });
+    onDone({ roomCode: "LOKAL", status: "playing", hostId: players[0].id, players, playerOrder: players.map((player) => player.id), activePlayer: players[0].id, diceResult: null, winner: null, placements: [], lastAction: `${players[0].name} beginnt.`, updatedAt: Date.now(), turnNumber: 1, lastEvent: null, lastMove: null });
   }
   return <Dialog title="Auf einem Gerät spielen" onClose={onCancel}><form className="entry-form" onSubmit={submit}><p className="local-intro">Reicht das Gerät nach jedem Zug weiter. Eine Lobby oder Internetverbindung ist dafür nicht nötig.</p><div className="local-player-list">{names.map((name, index) => <label key={index}><span className="mini-token" style={{ background: playerColors[index] }} />Spieler {index + 1}<input value={name} onChange={(event) => setNames((old) => old.map((entry, i) => i === index ? event.target.value : entry))} placeholder={`Name ${index + 1}`} maxLength={24} autoFocus={index === 0} /></label>)}</div><div className="local-buttons">{names.length < 8 && <button type="button" className="secondary compact" onClick={() => setNames((old) => [...old, ""])}>+ Person</button>}{names.length > 2 && <button type="button" className="text-button" onClick={() => setNames((old) => old.slice(0, -1))}>Letzte entfernen</button>}</div><button className="primary wide">Lokales Spiel starten</button></form></Dialog>;
 }
@@ -263,7 +271,7 @@ function DieFace({ value }: { value: number }) {
 
 function Game({ state, me, act, error, localMode = false, onExit }: { state: GameState; me: string; act: (action: string, extra?: object) => Promise<void>; error: string; localMode?: boolean; onExit: () => void }) {
   const active = state.players.find((entry) => entry.id === state.activePlayer)!; const ownTurn = localMode || active?.id === me; const [rolling, setRolling] = useState(false); const [animatedFace, setAnimatedFace] = useState(5);
-  const [eventVisible, setEventVisible] = useState(false); const [sound, setSound] = useState(true); const [positions, setPositions] = useState<Record<string, number>>(() => Object.fromEntries(state.players.map((entry) => [entry.id, entry.position]))); const [motionPositions, setMotionPositions] = useState<Record<string, BoardPoint>>({}); const [isMoving, setIsMoving] = useState(false); const [specialMotion, setSpecialMotion] = useState(false); const [motionAngle, setMotionAngle] = useState(0); const [showMotionLines, setShowMotionLines] = useState(false);
+  const [eventVisible, setEventVisible] = useState(false); const [placementPlayerId, setPlacementPlayerId] = useState<string | null>(null); const [rematchPromptVisible, setRematchPromptVisible] = useState(false); const [sound, setSound] = useState(true); const [positions, setPositions] = useState<Record<string, number>>(() => Object.fromEntries(state.players.map((entry) => [entry.id, entry.position]))); const [motionPositions, setMotionPositions] = useState<Record<string, BoardPoint>>({}); const [isMoving, setIsMoving] = useState(false); const [specialMotion, setSpecialMotion] = useState(false); const [motionAngle, setMotionAngle] = useState(0); const [showMotionLines, setShowMotionLines] = useState(false);
   const seenMove = useRef(state.lastMove?.id ?? "");
   useEffect(() => {
     if (rolling || !state.lastMove || seenMove.current === state.lastMove.id) return;
@@ -280,8 +288,9 @@ function Game({ state, me, act, error, localMode = false, onExit }: { state: Gam
       const landing = move.path.at(-1); const finalField = finalPositions[move.playerId];
       const event = state.lastEvent;
       const hasCurrentEvent = Boolean(landing && event && event.playerId === move.playerId && event.fieldNumber === landing);
+      const reachedGoal = Boolean(hasCurrentEvent && landing === 100);
       setShowMotionLines(false);
-      if (hasCurrentEvent) setEventVisible(true);
+      if (hasCurrentEvent && !reachedGoal) setEventVisible(true);
       if (landing && finalField && landing !== finalField) {
         await pause(1700);
         if (cancelled) return;
@@ -290,30 +299,44 @@ function Game({ state, me, act, error, localMode = false, onExit }: { state: Gam
       }
       if (cancelled) return;
       setMotionPositions((old) => { const next = { ...old }; delete next[move.playerId]; return next; });
-      setPositions(finalPositions); setSpecialMotion(false); setShowMotionLines(false); setIsMoving(false);
+      setPositions(finalPositions); setSpecialMotion(false); setShowMotionLines(false);
+      if (reachedGoal) {
+        await pause(800);
+        if (cancelled) return;
+        setPlacementPlayerId(move.playerId);
+      }
+      setIsMoving(false);
     }
     void animate();
     return () => { cancelled = true; };
   }, [state.lastMove?.id, rolling]);
   useEffect(() => { if (state.lastMove?.id) setEventVisible(false); }, [state.lastMove?.id]);
+  const placements = state.placements ?? (state.winner ? [state.winner] : []);
+  const remainingPlayers = state.players.filter((entry) => entry.position < 100);
+  const gameOver = state.status === "finished" || (placements.length > 0 && remainingPlayers.length <= 1);
   async function roll() {
-    if (!ownTurn || rolling || isMoving) return;
+    if (rolling || isMoving) return;
+    if (gameOver) { setRematchPromptVisible(true); return; }
+    if (!ownTurn) return;
     setEventVisible(false); setRolling(true);
     const timer = window.setInterval(() => setAnimatedFace(crypto.getRandomValues(new Uint32Array(1))[0] % 6 + 1), 75);
     await Promise.all([act("roll"), new Promise((resolve) => window.setTimeout(resolve, 850))]);
     window.clearInterval(timer); setRolling(false);
   }
   const focusField = positions[state.lastMove?.playerId || state.activePlayer] || active?.position || 1;
-  const winner = state.players.find((entry) => entry.id === state.winner);
+  const placedPlayer = state.players.find((entry) => entry.id === placementPlayerId);
+  const placement = placementPlayerId ? placements.indexOf(placementPlayerId) + 1 : 0;
+  async function startRematch() { setPlacementPlayerId(null); setRematchPromptVisible(false); await act("rematch"); }
   const dev = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("dev");
   return <main className="game-page"><header className="game-header"><Logo /><div><button className="back-button" onClick={onExit}>← Startmenü</button><span className="room-pill">{localMode ? "Ein Gerät" : state.roomCode}</span><button className="icon-button" onClick={() => setSound(!sound)} aria-label={sound ? "Ton ausschalten" : "Ton einschalten"}>{sound ? "♪" : "×"}</button></div></header>
     <div className="game-layout"><section className="board-panel"><div className="turn-banner"><span className="mini-token" style={{ background: pawnColor(active?.color || playerColors[0]) }} /><div><small>Am Zug</small><strong>{active?.name}</strong></div><p>{state.lastAction}</p></div><Board state={state} me={localMode ? active?.id : me} displayPositions={positions} motionPositions={motionPositions} focusField={focusField} movingPlayerId={isMoving ? state.lastMove?.playerId : undefined} highlightedPlayerId={!rolling && !isMoving ? state.activePlayer : undefined} motionAngle={motionAngle} showMotionLines={showMotionLines} specialMotion={specialMotion} /></section>
-      <aside className="game-sidebar"><div className="dice-panel"><p className="eyebrow">Zug {state.turnNumber}</p><button className={`die ${rolling ? "rolling" : ""}`} onClick={roll} disabled={!ownTurn || rolling || isMoving} aria-label="Würfeln"><DieFace value={rolling ? animatedFace : state.diceResult || 5} /></button><h2>{isMoving ? "Figur ist unterwegs …" : localMode ? `${active?.name} ist dran.` : ownTurn ? "Du bist dran." : `${active?.name} würfelt.`}</h2><p>{isMoving ? "Die Figur folgt dem Spielweg." : localMode ? "Würfeln und danach das Gerät weitergeben." : ownTurn ? "Tippe auf den Würfel." : "Auf allen Geräten geht es gleich weiter."}</p>{error && <p className="error">{error}</p>}</div>
+      <aside className="game-sidebar"><div className="dice-panel"><p className="eyebrow">Zug {state.turnNumber}</p><button className={`die ${rolling ? "rolling" : ""}`} onClick={roll} disabled={rolling || isMoving || (!gameOver && !ownTurn)} aria-label={gameOver ? "Revanche anfragen" : "Würfeln"}><DieFace value={rolling ? animatedFace : state.diceResult || 5} /></button><h2>{isMoving ? "Figur ist unterwegs …" : gameOver ? "Partie beendet" : localMode ? `${active?.name} ist dran.` : ownTurn ? "Du bist dran." : `${active?.name} würfelt.`}</h2><p>{isMoving ? "Die Figur folgt dem Spielweg." : gameOver ? "Klicke auf den Würfel, um eine Revanche zu starten." : localMode ? "Würfeln und danach das Gerät weitergeben." : ownTurn ? "Tippe auf den Würfel." : "Auf allen Geräten geht es gleich weiter."}</p>{error && <p className="error">{error}</p>}</div>
         <div className={`event-dock ${eventVisible ? "has-event" : ""}`} aria-live="polite"><div className="panel-heading"><h3>Hinweis</h3>{eventVisible && state.lastEvent && <span>Feld {state.lastEvent.fieldNumber}</span>}</div>{eventVisible && state.lastEvent ? <div className="event-dock-content"><p className="eyebrow">{fieldByNumber[state.lastEvent.fieldNumber].date || "AVEGA Geschichte"}</p><strong>{fieldByNumber[state.lastEvent.fieldNumber].title}</strong><p className="event-description">{fieldByNumber[state.lastEvent.fieldNumber].description}</p><div className="event-dock-action"><span>Spielaktion</span><b>{state.lastEvent.actionLabel}</b></div></div> : <p className="event-dock-empty">Beim nächsten Spezialfeld erscheint der aktuelle Hinweis hier.</p>}</div>
         <div className="score-panel"><div className="panel-heading"><h3>Auf dem Weg</h3><span>Feld</span></div>{[...state.players].sort((a,b) => b.position-a.position).map((player) => <div className="score" key={player.id}><span className="mini-token" style={{ background: pawnColor(player.color) }} /><b>{player.name}</b><strong>{player.position}</strong></div>)}</div>
         {dev && <div className="dev-panel"><strong>Testmodus</strong><select onChange={(e) => act("dev", { fieldNumber: Number(e.target.value) })} defaultValue=""><option value="" disabled>Feld testen …</option>{fields.filter((f) => f.fieldType !== "normal").map((f) => <option key={f.fieldNumber} value={f.fieldNumber}>{f.fieldNumber} · {f.title}</option>)}</select><select onChange={(e) => act("dev", { forceDice: Number(e.target.value) })} defaultValue=""><option value="" disabled>Nächsten Wurf setzen …</option>{[1,2,3,4,5,6].map((n) => <option key={n}>{n}</option>)}</select><button className="secondary compact" onClick={() => act("dev", { addBot: true })}>Testperson hinzufügen</button></div>}
       </aside></div>
-    {state.status === "finished" && <div className="winner-overlay"><div className="winner-card"><Logo /><div className="winner-token" style={{ background: pawnColor(winner?.color || playerColors[0]) }} /><p className="eyebrow">Feld 100</p><h1>{winner?.name} gewinnt!</h1><p>Zehn Jahre avega. Jetzt wird angestossen.</p>{localMode || me === state.hostId ? <button className="primary" onClick={() => act("rematch")}>Revanche</button> : <p>Die Raumleitung kann eine Revanche starten.</p>}</div></div>}
+    {placedPlayer && placement > 0 && <div className="winner-overlay"><div className="winner-card"><button className="icon-button close" onClick={() => setPlacementPlayerId(null)} aria-label="Weiterspielen">×</button><Logo /><div className="winner-token" style={{ background: pawnColor(placedPlayer.color) }} /><p className="eyebrow">Feld 100 · {placement}. Platz</p><h1>{placement}. Platz für {placedPlayer.name}!</h1><p>{remainingPlayers.length > 1 ? "Die übrigen Spielenden können weiter bis ins Ziel ziehen." : "Die Platzierungen stehen fest. Zeit für eine Revanche!"}</p><div className="winner-actions">{remainingPlayers.length > 1 && <button className="secondary" onClick={() => setPlacementPlayerId(null)}>Weiterspielen</button>}<button className="primary" onClick={startRematch}>Revanche</button></div></div></div>}
+    {rematchPromptVisible && <Dialog title="Neue Revanche starten?" onClose={() => setRematchPromptVisible(false)}><div className="rematch-prompt"><p>Diese Partie ist beendet. Sollen alle Töggeli wieder auf Feld 1 starten?</p><button className="primary wide" onClick={startRematch}>Revanche starten</button></div></Dialog>}
   </main>;
 }
 

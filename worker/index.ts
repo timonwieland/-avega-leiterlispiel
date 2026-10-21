@@ -46,6 +46,7 @@ type GameState = {
   turnState: "waiting" | "moving" | "event" | "finished";
   specialActions: Record<string, unknown>;
   winner: string | null;
+  placements?: string[];
   lastAction: string;
   lastEvent: { id: string; fieldNumber: number; playerId: string; actionLabel: string; affectedPlayerIds: string[] } | null;
   lastMove: { id: string; playerId: string; path: number[]; secondary?: { playerId: string; from: number; to: number } } | null;
@@ -93,7 +94,7 @@ function advanceTurn(state: GameState, currentIndex: number) {
   for (let offset = 1; offset <= state.playerOrder.length; offset++) {
     const id = state.playerOrder[(currentIndex + offset) % state.playerOrder.length];
     const player = state.players.find((entry) => entry.id === id);
-    if (!player) continue;
+    if (!player || player.position === 100) continue;
     if (player.skipTurns > 0) {
       player.skipTurns -= 1;
       state.lastAction += ` ${player.name} setzt diese Runde aus.`;
@@ -103,7 +104,9 @@ function advanceTurn(state: GameState, currentIndex: number) {
     state.turnNumber += 1;
     return;
   }
-  state.activePlayer = state.playerOrder[(currentIndex + 1) % state.playerOrder.length];
+  const remaining = state.players.find((entry) => entry.position < 100);
+  if (remaining) state.activePlayer = remaining.id;
+  else state.status = "finished";
   state.turnNumber += 1;
 }
 
@@ -127,15 +130,16 @@ function applyFieldAction(state: GameState, player: Player, landingField: number
     player.nextRollMultiplier = field.nextRollMultiplier ?? 2;
     affected.push(player.id);
   } else if (field.actionType === "leaderBack") {
-    const lead = Math.max(...state.players.map((entry) => entry.position));
+    const eligible = state.players.filter((entry) => entry.position < 100);
+    const lead = eligible.length ? Math.max(...eligible.map((entry) => entry.position)) : 0;
     if (lead > 65) {
-      state.players.filter((entry) => entry.position === lead).forEach((entry) => {
+      eligible.filter((entry) => entry.position === lead).forEach((entry) => {
         entry.position = 65;
         affected.push(entry.id);
       });
     }
   } else if (field.actionType === "swapNearest") {
-    const others = state.players.filter((entry) => entry.id !== player.id);
+    const others = state.players.filter((entry) => entry.id !== player.id && entry.position < 100);
     const ranked = others.sort((a, b) => {
       const distance = Math.abs(a.position - landingField) - Math.abs(b.position - landingField);
       if (distance) return distance;
@@ -152,9 +156,15 @@ function applyFieldAction(state: GameState, player: Player, landingField: number
       secondary = { playerId: nearest.id, from: otherFrom, to: landingField };
     }
   } else if (field.actionType === "goal") {
-    state.status = "finished";
-    state.turnState = "finished";
-    state.winner = player.id;
+    state.placements ??= [];
+    if (!state.placements.includes(player.id)) state.placements.push(player.id);
+    state.winner ??= player.id;
+    const remaining = state.players.filter((entry) => entry.position < 100);
+    if (remaining.length <= 1) {
+      state.status = "finished";
+      state.turnState = "finished";
+      state.activePlayer = remaining[0]?.id ?? player.id;
+    }
     affected.push(player.id);
   }
 
@@ -183,7 +193,7 @@ async function api(request: Request, env: Env, url: URL) {
     }
     const now = Date.now();
     const player: Player = { id: makeId(), name, color: String(body.color || "#0b70b7"), position: 1, ready: true, skipTurns: 0, nextRollMultiplier: 1, joinedAt: now, lastSeen: now };
-    const state: GameState = { roomId: makeId(), roomCode: code, status: "lobby", createdAt: now, hostId: player.id, players: [player], playerOrder: [player.id], activePlayer: player.id, diceResult: null, turnState: "waiting", specialActions: {}, winner: null, lastAction: `${name} hat den Raum eröffnet.`, lastEvent: null, lastMove: null, updatedAt: now, turnNumber: 0 };
+    const state: GameState = { roomId: makeId(), roomCode: code, status: "lobby", createdAt: now, hostId: player.id, players: [player], playerOrder: [player.id], activePlayer: player.id, diceResult: null, turnState: "waiting", specialActions: {}, winner: null, placements: [], lastAction: `${name} hat den Raum eröffnet.`, lastEvent: null, lastMove: null, updatedAt: now, turnNumber: 0 };
     await env.DB.prepare("INSERT INTO rooms (code, state, version, created_at, updated_at) VALUES (?, ?, 1, ?, ?)").bind(code, JSON.stringify(state), now, now).run();
     return json({ state, playerId: player.id });
   }
@@ -259,15 +269,14 @@ async function api(request: Request, env: Env, url: URL) {
       state.lastAction = `${player.name} würfelt ${rolled}${multiplier > 1 ? ` × ${multiplier}` : ""}${bounced ? `, erreicht Feld 100 und geht zurück auf Feld ${to}.` : ` und zieht auf Feld ${to}.`}`;
       const event = applyFieldAction(state, player, to);
       state.lastMove = { id: makeId(), playerId, path, secondary: event.secondary };
-      if (!state.winner) {
+      if (state.status === "playing") {
         state.turnState = "waiting";
         if (!event.extraRoll) advanceTurn(state, state.playerOrder.indexOf(playerId));
         else state.lastAction += " Nochmals würfeln!";
       }
     } else if (action === "rematch") {
-      if (state.hostId !== playerId) return json({ error: "Nur die raumleitende Person kann die Revanche starten." }, 403);
-      state.players.forEach((entry) => { entry.position = 1; entry.skipTurns = 0; entry.nextRollMultiplier = 1; entry.ready = entry.id === state.hostId || Boolean(entry.isBot); });
-      state.status = "lobby"; state.winner = null; state.diceResult = null; state.lastEvent = null; state.lastMove = null; state.turnNumber = 0; state.lastAction = "Bereit für die Revanche?";
+      state.players.forEach((entry) => { entry.position = 1; entry.skipTurns = 0; entry.nextRollMultiplier = 1; entry.ready = true; });
+      state.status = "playing"; state.turnState = "waiting"; state.winner = null; state.placements = []; state.diceResult = null; state.lastEvent = null; state.lastMove = null; state.activePlayer = state.playerOrder[0]; state.turnNumber = 1; state.lastAction = `${state.players[0].name} beginnt die Revanche.`;
     } else if (action === "dev") {
       if (body.addBot && state.players.length < 8) {
         const now = Date.now(); const number = state.players.length + 1; const bot: Player = { id: makeId(), name: `Testperson ${number}`, color: ["#e94f37", "#f5a623", "#4a9d72", "#7757a8"][number % 4], position: 1, ready: true, skipTurns: 0, nextRollMultiplier: 1, isBot: true, joinedAt: now, lastSeen: now };
