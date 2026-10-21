@@ -203,7 +203,7 @@ function MotionLines({ color, angle }: { color: string; angle: number }) {
   return <span className="motion-lines" style={{ "--motion-color": color, "--motion-angle": `${angle}deg` } as React.CSSProperties} aria-hidden="true"><i /><i /><i /></span>;
 }
 
-function Board({ state, me, displayPositions, motionPositions, focusField, movingPlayerId, motionAngle, showMotionLines }: { state: GameState; me: string; displayPositions: Record<string, number>; motionPositions: Record<string, BoardPoint>; focusField: number; movingPlayerId?: string; motionAngle: number; showMotionLines: boolean }) {
+function Board({ state, me, displayPositions, motionPositions, focusField, movingPlayerId, motionAngle, showMotionLines, specialMotion }: { state: GameState; me: string; displayPositions: Record<string, number>; motionPositions: Record<string, BoardPoint>; focusField: number; movingPlayerId?: string; motionAngle: number; showMotionLines: boolean; specialMotion: boolean }) {
   const boardRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const viewport = boardRef.current;
@@ -252,7 +252,7 @@ function Board({ state, me, displayPositions, motionPositions, focusField, movin
         <div className={`tokens ${tokenLayout}`}>{occupants.map((player) => { const color = pawnColor(player.color); return <span key={player.id} className="token-wrap">{showMotionLines && player.id === movingPlayerId && <MotionLines color={color} angle={motionAngle} />}<span className={`token ${player.id === me ? "mine" : ""}`} style={{ background: color }} title={player.name}><i /></span></span>; })}</div>
       </div>;
     })}
-    {Object.entries(motionPositions).map(([playerId, point]) => { const player = state.players.find((entry) => entry.id === playerId); if (!player) return null; const color = pawnColor(player.color); return <span key={playerId} className="token-wrap moving-token" style={{ left: `${point.x}%`, top: `${point.y}%` }}>{showMotionLines && playerId === movingPlayerId && <MotionLines color={color} angle={motionAngle} />}<span className={`token ${playerId === me ? "mine" : ""}`} style={{ background: color }} title={player.name}><i /></span></span>; })}
+    {Object.entries(motionPositions).map(([playerId, point]) => { const player = state.players.find((entry) => entry.id === playerId); if (!player) return null; const color = pawnColor(player.color); return <span key={playerId} className={`token-wrap moving-token ${specialMotion ? "special-motion" : ""}`} style={{ left: `${point.x}%`, top: `${point.y}%` }}>{showMotionLines && playerId === movingPlayerId && <MotionLines color={color} angle={motionAngle} />}<span className={`token ${playerId === me ? "mine" : ""}`} style={{ background: color }} title={player.name}><i /></span></span>; })}
   </div></div>;
 }
 
@@ -263,16 +263,18 @@ function DieFace({ value }: { value: number }) {
 
 function Game({ state, me, act, error, localMode = false, onExit }: { state: GameState; me: string; act: (action: string, extra?: object) => Promise<void>; error: string; localMode?: boolean; onExit: () => void }) {
   const active = state.players.find((entry) => entry.id === state.activePlayer)!; const ownTurn = localMode || active?.id === me; const [rolling, setRolling] = useState(false); const [animatedFace, setAnimatedFace] = useState(5);
-  const [eventVisible, setEventVisible] = useState(false); const [sound, setSound] = useState(true); const [positions, setPositions] = useState<Record<string, number>>(() => Object.fromEntries(state.players.map((entry) => [entry.id, entry.position]))); const [motionPositions, setMotionPositions] = useState<Record<string, BoardPoint>>({}); const [isMoving, setIsMoving] = useState(false); const [motionAngle, setMotionAngle] = useState(0); const [showMotionLines, setShowMotionLines] = useState(false);
+  const [eventVisible, setEventVisible] = useState(false); const [sound, setSound] = useState(true); const [positions, setPositions] = useState<Record<string, number>>(() => Object.fromEntries(state.players.map((entry) => [entry.id, entry.position]))); const [motionPositions, setMotionPositions] = useState<Record<string, BoardPoint>>({}); const [isMoving, setIsMoving] = useState(false); const [specialMotion, setSpecialMotion] = useState(false); const [motionAngle, setMotionAngle] = useState(0); const [showMotionLines, setShowMotionLines] = useState(false);
   const seenMove = useRef(state.lastMove?.id ?? "");
   useEffect(() => {
     if (rolling || !state.lastMove || seenMove.current === state.lastMove.id) return;
     seenMove.current = state.lastMove.id; const move = state.lastMove; const finalPositions = Object.fromEntries(state.players.map((entry) => [entry.id, entry.position])); let cancelled = false;
-    setIsMoving(true); setEventVisible(false); setShowMotionLines(true); setMotionPositions((old) => { const next = { ...old }; delete next[move.playerId]; return next; });
+    setIsMoving(true); setSpecialMotion(false); setEventVisible(false); setShowMotionLines(true);
     const pause = (duration: number) => new Promise((resolve) => window.setTimeout(resolve, duration));
     async function animate() {
       let previousField = positions[move.playerId] || 1;
-      for (const next of move.path) { setMotionAngle(movementAngle(fieldCenter(previousField), fieldCenter(next))); await pause(320); if (cancelled) return; setPositions((old) => ({ ...old, [move.playerId]: next })); previousField = next; }
+      setMotionPositions((old) => ({ ...old, [move.playerId]: fieldCenter(previousField) }));
+      await pause(40);
+      for (const next of move.path) { setMotionAngle(movementAngle(fieldCenter(previousField), fieldCenter(next))); setMotionPositions((old) => ({ ...old, [move.playerId]: fieldCenter(next) })); await pause(320); if (cancelled) return; setPositions((old) => ({ ...old, [move.playerId]: next })); previousField = next; }
       const landing = move.path.at(-1); const finalField = finalPositions[move.playerId];
       const event = state.lastEvent;
       const hasCurrentEvent = Boolean(landing && event && event.playerId === move.playerId && event.fieldNumber === landing);
@@ -281,12 +283,12 @@ function Game({ state, me, act, error, localMode = false, onExit }: { state: Gam
       if (landing && finalField && landing !== finalField) {
         await pause(1700);
         if (cancelled) return;
-        let previousPoint = fieldCenter(landing); setShowMotionLines(true);
+        let previousPoint = fieldCenter(landing); setSpecialMotion(true); setShowMotionLines(true);
         for (const point of specialMotionPath(landing, finalField)) { setMotionAngle(movementAngle(previousPoint, point)); await pause(75); if (cancelled) return; setMotionPositions((old) => ({ ...old, [move.playerId]: point })); previousPoint = point; }
       }
       if (cancelled) return;
       setMotionPositions((old) => { const next = { ...old }; delete next[move.playerId]; return next; });
-      setPositions(finalPositions); setShowMotionLines(false); setIsMoving(false);
+      setPositions(finalPositions); setSpecialMotion(false); setShowMotionLines(false); setIsMoving(false);
     }
     void animate();
     return () => { cancelled = true; };
@@ -303,7 +305,7 @@ function Game({ state, me, act, error, localMode = false, onExit }: { state: Gam
   const winner = state.players.find((entry) => entry.id === state.winner);
   const dev = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("dev");
   return <main className="game-page"><header className="game-header"><Logo /><div><button className="back-button" onClick={onExit}>← Startmenü</button><span className="room-pill">{localMode ? "Ein Gerät" : state.roomCode}</span><button className="icon-button" onClick={() => setSound(!sound)} aria-label={sound ? "Ton ausschalten" : "Ton einschalten"}>{sound ? "♪" : "×"}</button></div></header>
-    <div className="game-layout"><section className="board-panel"><div className="turn-banner"><span className="mini-token" style={{ background: pawnColor(active?.color || playerColors[0]) }} /><div><small>Am Zug</small><strong>{active?.name}</strong></div><p>{state.lastAction}</p></div><Board state={state} me={localMode ? active?.id : me} displayPositions={positions} motionPositions={motionPositions} focusField={focusField} movingPlayerId={isMoving ? state.lastMove?.playerId : undefined} motionAngle={motionAngle} showMotionLines={showMotionLines} /></section>
+    <div className="game-layout"><section className="board-panel"><div className="turn-banner"><span className="mini-token" style={{ background: pawnColor(active?.color || playerColors[0]) }} /><div><small>Am Zug</small><strong>{active?.name}</strong></div><p>{state.lastAction}</p></div><Board state={state} me={localMode ? active?.id : me} displayPositions={positions} motionPositions={motionPositions} focusField={focusField} movingPlayerId={isMoving ? state.lastMove?.playerId : undefined} motionAngle={motionAngle} showMotionLines={showMotionLines} specialMotion={specialMotion} /></section>
       <aside className="game-sidebar"><div className="dice-panel"><p className="eyebrow">Zug {state.turnNumber}</p><button className={`die ${rolling ? "rolling" : ""}`} onClick={roll} disabled={!ownTurn || rolling || isMoving} aria-label="Würfeln"><DieFace value={rolling ? animatedFace : state.diceResult || 5} /></button><h2>{isMoving ? "Figur ist unterwegs …" : localMode ? `${active?.name} ist dran.` : ownTurn ? "Du bist dran." : `${active?.name} würfelt.`}</h2><p>{isMoving ? "Die Figur folgt dem Spielweg." : localMode ? "Würfeln und danach das Gerät weitergeben." : ownTurn ? "Tippe auf den Würfel." : "Auf allen Geräten geht es gleich weiter."}</p>{error && <p className="error">{error}</p>}</div>
         <div className={`event-dock ${eventVisible ? "has-event" : ""}`} aria-live="polite"><div className="panel-heading"><h3>Hinweis</h3>{eventVisible && state.lastEvent && <span>Feld {state.lastEvent.fieldNumber}</span>}</div>{eventVisible && state.lastEvent ? <div className="event-dock-content"><p className="eyebrow">{fieldByNumber[state.lastEvent.fieldNumber].date || "AVEGA Geschichte"}</p><strong>{fieldByNumber[state.lastEvent.fieldNumber].title}</strong><p className="event-description">{fieldByNumber[state.lastEvent.fieldNumber].description}</p><div className="event-dock-action"><span>Spielaktion</span><b>{state.lastEvent.actionLabel}</b></div></div> : <p className="event-dock-empty">Beim nächsten Spezialfeld erscheint der aktuelle Hinweis hier.</p>}</div>
         <div className="score-panel"><div className="panel-heading"><h3>Auf dem Weg</h3><span>Feld</span></div>{[...state.players].sort((a,b) => b.position-a.position).map((player) => <div className="score" key={player.id}><span className="mini-token" style={{ background: pawnColor(player.color) }} /><b>{player.name}</b><strong>{player.position}</strong></div>)}</div>
