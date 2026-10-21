@@ -346,7 +346,7 @@ function Rules({ onClose }: { onClose: () => void }) {
 
 function FullscreenButton() {
   const [active, setActive] = useState(false);
-  const [supported, setSupported] = useState(true);
+  const [supported, setSupported] = useState(false);
   useEffect(() => {
     const sync = () => setActive(Boolean(document.fullscreenElement));
     setSupported(Boolean(document.fullscreenEnabled && document.documentElement.requestFullscreen));
@@ -354,14 +354,31 @@ function FullscreenButton() {
     sync();
     return () => document.removeEventListener("fullscreenchange", sync);
   }, []);
-  if (!supported) return null;
+  function openStandaloneTab() {
+    const next = window.open("about:blank", "_blank");
+    if (!next) return;
+    try {
+      const resume = localStorage.getItem("avega:resume");
+      if (resume) {
+        next.localStorage.setItem("avega:resume", resume);
+        const session = JSON.parse(resume) as { roomCode?: string; playerId?: string };
+        if (session.roomCode && session.playerId) next.localStorage.setItem(`avega:${session.roomCode.toUpperCase()}`, session.playerId);
+      }
+      next.opener = null;
+      next.location.replace(window.location.href);
+    } catch {
+      next.location.replace(window.location.href);
+    }
+  }
   async function toggle() {
+    if (!supported) { openStandaloneTab(); return; }
     try {
       if (document.fullscreenElement) await document.exitFullscreen();
       else await document.documentElement.requestFullscreen();
-    } catch { /* The embedding page must allow fullscreen. */ }
+    } catch { setSupported(false); openStandaloneTab(); }
   }
-  return <button className={`fullscreen-button ${active ? "active" : ""}`} onClick={toggle} aria-label={active ? "Vollbild beenden" : "Im Vollbild öffnen"} title={active ? "Vollbild beenden" : "Vollbild"}>
+  const label = active ? "Vollbild beenden" : supported ? "Im Vollbild öffnen" : "In einem grossen Fenster öffnen";
+  return <button className={`fullscreen-button ${active ? "active" : ""}`} onClick={toggle} aria-label={label} title={label}>
     <span className="fullscreen-icon" aria-hidden="true"><i /><i /><i /><i /></span>
   </button>;
 }
