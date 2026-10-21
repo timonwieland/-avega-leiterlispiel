@@ -205,7 +205,21 @@ function MotionLines({ color, angle }: { color: string; angle: number }) {
 
 function Board({ state, me, displayPositions, motionPositions, focusField, movingPlayerId, motionAngle, showMotionLines }: { state: GameState; me: string; displayPositions: Record<string, number>; motionPositions: Record<string, BoardPoint>; focusField: number; movingPlayerId?: string; motionAngle: number; showMotionLines: boolean }) {
   const boardRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { boardRef.current?.querySelector(`[data-field="${focusField}"]`)?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" }); }, [focusField]);
+  useEffect(() => {
+    const viewport = boardRef.current;
+    const target = viewport?.querySelector(`[data-field="${focusField}"]`) as HTMLElement | null;
+    if (!viewport || !target) return;
+    const viewportRect = viewport.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const horizontalMargin = Math.min(viewport.clientWidth * .2, 110);
+    const verticalMargin = Math.min(viewport.clientHeight * .2, 110);
+    let left = 0; let top = 0;
+    if (targetRect.left < viewportRect.left + horizontalMargin) left = targetRect.left - viewportRect.left - horizontalMargin;
+    else if (targetRect.right > viewportRect.right - horizontalMargin) left = targetRect.right - viewportRect.right + horizontalMargin;
+    if (targetRect.top < viewportRect.top + verticalMargin) top = targetRect.top - viewportRect.top - verticalMargin;
+    else if (targetRect.bottom > viewportRect.bottom - verticalMargin) top = targetRect.bottom - viewportRect.bottom + verticalMargin;
+    if (Math.abs(left) > 1 || Math.abs(top) > 1) viewport.scrollBy({ left, top, behavior: "smooth" });
+  }, [focusField]);
   const ordered = useMemo(() => Array.from({ length: 10 }, (_, visualRow) => {
     const gameRow = 9 - visualRow;
     return Array.from({ length: 10 }, (_, col) => gameRow % 2 === 0 ? gameRow * 10 + col + 1 : gameRow * 10 + (10 - col));
