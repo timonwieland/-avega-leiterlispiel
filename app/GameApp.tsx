@@ -271,6 +271,8 @@ function Game({ state, me, act, error, localMode = false, onExit }: { state: Gam
     setIsMoving(true); setSpecialMotion(false); setEventVisible(false); setShowMotionLines(true);
     const pause = (duration: number) => new Promise((resolve) => window.setTimeout(resolve, duration));
     async function animate() {
+      await pause(200);
+      if (cancelled) return;
       let previousField = positions[move.playerId] || 1;
       setMotionPositions((old) => ({ ...old, [move.playerId]: fieldCenter(previousField) }));
       await pause(40);
