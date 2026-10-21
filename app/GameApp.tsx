@@ -220,6 +220,27 @@ function Board({ state, me, displayPositions, motionPositions, focusField, movin
     else if (targetRect.bottom > viewportRect.bottom - verticalMargin) top = targetRect.bottom - viewportRect.bottom + verticalMargin;
     if (Math.abs(left) > 1 || Math.abs(top) > 1) viewport.scrollBy({ left, top, behavior: "smooth" });
   }, [focusField]);
+  useEffect(() => {
+    let frame = 0; let layoutFrame = 0;
+    const syncFullscreenPosition = () => {
+      window.cancelAnimationFrame(frame); window.cancelAnimationFrame(layoutFrame);
+      frame = window.requestAnimationFrame(() => {
+        layoutFrame = window.requestAnimationFrame(() => {
+          const viewport = boardRef.current;
+          if (!viewport) return;
+          if (document.fullscreenElement) {
+            viewport.scrollTo({ left: 0, top: 0, behavior: "auto" });
+            return;
+          }
+          const target = viewport.querySelector(`[data-field="${focusField}"]`) as HTMLElement | null;
+          if (!target) return;
+          viewport.scrollTo({ left: target.offsetLeft + target.offsetWidth / 2 - viewport.clientWidth / 2, top: target.offsetTop + target.offsetHeight / 2 - viewport.clientHeight / 2, behavior: "smooth" });
+        });
+      });
+    };
+    document.addEventListener("fullscreenchange", syncFullscreenPosition);
+    return () => { document.removeEventListener("fullscreenchange", syncFullscreenPosition); window.cancelAnimationFrame(frame); window.cancelAnimationFrame(layoutFrame); };
+  }, [focusField]);
   const ordered = useMemo(() => Array.from({ length: 10 }, (_, visualRow) => {
     const gameRow = 9 - visualRow;
     return Array.from({ length: 10 }, (_, col) => gameRow % 2 === 0 ? gameRow * 10 + col + 1 : gameRow * 10 + (10 - col));
