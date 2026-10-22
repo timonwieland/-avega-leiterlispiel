@@ -269,10 +269,78 @@ function DieFace({ value }: { value: number }) {
   return <span className="die-face" aria-hidden="true">{diePips[value].map((position) => <i key={position} className={`pip pip-${position}`} />)}</span>;
 }
 
+type GameAudio = { dice: () => void; goal: () => void; stop: () => void };
+
+function createGameAudio(): GameAudio | null {
+  const AudioContextConstructor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioContextConstructor) return null;
+  const context = new AudioContextConstructor();
+  const master = context.createGain();
+  master.gain.value = .42;
+  master.connect(context.destination);
+  let stopped = false;
+  let loopTimer = 0;
+  const beat = .36;
+  const melody: Array<number | null> = [
+    67, null, 71, 74, 71, null, 69, 67, 64, null, 67, 71, 69, null, 67, null,
+    62, null, 66, 69, 71, 69, 66, null, 64, 67, 71, 74, 72, 71, 67, null,
+    67, null, 71, 74, 76, 74, 71, null, 69, 71, 72, 76, 74, null, 71, null,
+    64, 67, 69, 71, 69, 67, 64, null, 62, 64, 67, 66, 64, 62, 60, null,
+  ];
+  const bass = [48, 43, 45, 41, 48, 45, 43, 48];
+  const frequency = (midi: number) => 440 * 2 ** ((midi - 69) / 12);
+  function tone(midi: number, start: number, duration: number, volume: number, type: OscillatorType = "triangle") {
+    if (stopped) return;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = type;
+    oscillator.frequency.value = frequency(midi);
+    gain.gain.setValueAtTime(.0001, start);
+    gain.gain.exponentialRampToValueAtTime(volume, start + .025);
+    gain.gain.exponentialRampToValueAtTime(.0001, start + duration);
+    oscillator.connect(gain).connect(master);
+    oscillator.start(start);
+    oscillator.stop(start + duration + .04);
+  }
+  const phraseDuration = melody.length * beat;
+  let nextPhrase = context.currentTime + .08;
+  function schedulePhrase() {
+    const start = nextPhrase;
+    melody.forEach((note, index) => { if (note !== null) tone(note, start + index * beat, beat * .72, .038); });
+    bass.forEach((note, index) => tone(note, start + index * beat * 8, beat * 3.3, .022, "sine"));
+    nextPhrase += phraseDuration;
+  }
+  schedulePhrase();
+  loopTimer = window.setInterval(() => { if (nextPhrase < context.currentTime + 4) schedulePhrase(); }, 1000);
+  void context.resume();
+  return {
+    dice() {
+      const now = context.currentTime + .01;
+      [76, 72, 79].forEach((note, index) => tone(note, now + index * .055, .07, .09, "square"));
+    },
+    goal() {
+      const now = context.currentTime + .03;
+      [60, 64, 67, 72].forEach((note, index) => tone(note, now + index * .13, .3, .12, index === 3 ? "sine" : "triangle"));
+    },
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      window.clearInterval(loopTimer);
+      const now = context.currentTime;
+      master.gain.cancelScheduledValues(now);
+      master.gain.setValueAtTime(master.gain.value, now);
+      master.gain.linearRampToValueAtTime(0, now + .18);
+      window.setTimeout(() => { void context.close(); }, 220);
+    },
+  };
+}
+
 function Game({ state, me, act, error, localMode = false, onExit }: { state: GameState; me: string; act: (action: string, extra?: object) => Promise<void>; error: string; localMode?: boolean; onExit: () => void }) {
   const active = state.players.find((entry) => entry.id === state.activePlayer)!; const ownTurn = localMode || active?.id === me; const [rolling, setRolling] = useState(false); const [animatedFace, setAnimatedFace] = useState(5);
-  const [eventVisible, setEventVisible] = useState(false); const [placementPlayerId, setPlacementPlayerId] = useState<string | null>(null); const [rematchPromptVisible, setRematchPromptVisible] = useState(false); const [sound, setSound] = useState(true); const [positions, setPositions] = useState<Record<string, number>>(() => Object.fromEntries(state.players.map((entry) => [entry.id, entry.position]))); const [motionPositions, setMotionPositions] = useState<Record<string, BoardPoint>>({}); const [isMoving, setIsMoving] = useState(false); const [specialMotion, setSpecialMotion] = useState(false); const [motionAngle, setMotionAngle] = useState(0); const [showMotionLines, setShowMotionLines] = useState(false);
+  const [eventVisible, setEventVisible] = useState(false); const [placementPlayerId, setPlacementPlayerId] = useState<string | null>(null); const [rematchPromptVisible, setRematchPromptVisible] = useState(false); const [sound, setSound] = useState(false); const [positions, setPositions] = useState<Record<string, number>>(() => Object.fromEntries(state.players.map((entry) => [entry.id, entry.position]))); const [motionPositions, setMotionPositions] = useState<Record<string, BoardPoint>>({}); const [isMoving, setIsMoving] = useState(false); const [specialMotion, setSpecialMotion] = useState(false); const [motionAngle, setMotionAngle] = useState(0); const [showMotionLines, setShowMotionLines] = useState(false);
+  const audioRef = useRef<GameAudio | null>(null);
   const seenMove = useRef(state.lastMove?.id ?? "");
+  useEffect(() => () => { audioRef.current?.stop(); audioRef.current = null; }, []);
   useEffect(() => {
     if (rolling || !state.lastMove || seenMove.current === state.lastMove.id) return;
     seenMove.current = state.lastMove.id; const move = state.lastMove; const finalPositions = Object.fromEntries(state.players.map((entry) => [entry.id, entry.position])); let cancelled = false;
@@ -301,6 +369,7 @@ function Game({ state, me, act, error, localMode = false, onExit }: { state: Gam
       setMotionPositions((old) => { const next = { ...old }; delete next[move.playerId]; return next; });
       setPositions(finalPositions); setSpecialMotion(false); setShowMotionLines(false);
       if (reachedGoal) {
+        audioRef.current?.goal();
         await pause(800);
         if (cancelled) return;
         setPlacementPlayerId(move.playerId);
@@ -318,6 +387,7 @@ function Game({ state, me, act, error, localMode = false, onExit }: { state: Gam
     if (rolling || isMoving) return;
     if (gameOver) { setRematchPromptVisible(true); return; }
     if (!ownTurn) return;
+    audioRef.current?.dice();
     setEventVisible(false); setRolling(true);
     const timer = window.setInterval(() => setAnimatedFace(crypto.getRandomValues(new Uint32Array(1))[0] % 6 + 1), 75);
     await Promise.all([act("roll"), new Promise((resolve) => window.setTimeout(resolve, 850))]);
@@ -327,8 +397,20 @@ function Game({ state, me, act, error, localMode = false, onExit }: { state: Gam
   const placedPlayer = state.players.find((entry) => entry.id === placementPlayerId);
   const placement = placementPlayerId ? placements.indexOf(placementPlayerId) + 1 : 0;
   async function startRematch() { setPlacementPlayerId(null); setRematchPromptVisible(false); await act("rematch"); }
+  function toggleSound() {
+    if (sound) {
+      audioRef.current?.stop();
+      audioRef.current = null;
+      setSound(false);
+      return;
+    }
+    const audio = createGameAudio();
+    if (!audio) return;
+    audioRef.current = audio;
+    setSound(true);
+  }
   const dev = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("dev");
-  return <main className="game-page"><header className="game-header"><Logo /><div><button className="back-button" onClick={onExit}>← Startmenü</button><span className="room-pill">{localMode ? "Ein Gerät" : state.roomCode}</span><button className="icon-button" onClick={() => setSound(!sound)} aria-label={sound ? "Ton ausschalten" : "Ton einschalten"}>{sound ? "♪" : "×"}</button></div></header>
+  return <main className="game-page"><header className="game-header"><Logo /><div><button className="back-button" onClick={onExit}>← Startmenü</button><span className="room-pill">{localMode ? "Ein Gerät" : state.roomCode}</span><button className={`icon-button sound-toggle ${sound ? "active" : ""}`} onClick={toggleSound} aria-label={sound ? "Musik ausschalten" : "Musik einschalten"} aria-pressed={sound} title={sound ? "Musik ausschalten" : "Musik einschalten"}>♪</button></div></header>
     <div className="game-layout"><section className="board-panel"><div className="turn-banner"><span className="mini-token" style={{ background: pawnColor(active?.color || playerColors[0]) }} /><div><small>Am Zug</small><strong>{active?.name}</strong></div><p>{state.lastAction}</p></div><Board state={state} me={localMode ? active?.id : me} displayPositions={positions} motionPositions={motionPositions} focusField={focusField} movingPlayerId={isMoving ? state.lastMove?.playerId : undefined} highlightedPlayerId={!rolling && !isMoving ? state.activePlayer : undefined} motionAngle={motionAngle} showMotionLines={showMotionLines} specialMotion={specialMotion} /></section>
       <aside className="game-sidebar"><div className="dice-panel"><p className="eyebrow">Zug {state.turnNumber}</p><button className={`die ${rolling ? "rolling" : ""}`} onClick={roll} disabled={rolling || isMoving || (!gameOver && !ownTurn)} aria-label={gameOver ? "Revanche anfragen" : "Würfeln"}><DieFace value={rolling ? animatedFace : state.diceResult || 5} /></button><h2>{isMoving ? "Figur ist unterwegs …" : gameOver ? "Partie beendet" : localMode ? `${active?.name} ist dran.` : ownTurn ? "Du bist dran." : `${active?.name} würfelt.`}</h2><p>{isMoving ? "Die Figur folgt dem Spielweg." : gameOver ? "Klicke auf den Würfel, um eine Revanche zu starten." : localMode ? "Würfeln und danach das Gerät weitergeben." : ownTurn ? "Tippe auf den Würfel." : "Auf allen Geräten geht es gleich weiter."}</p>{error && <p className="error">{error}</p>}</div>
         <div className={`event-dock ${eventVisible ? "has-event" : ""}`} aria-live="polite"><div className="panel-heading"><h3>Hinweis</h3>{eventVisible && state.lastEvent && <span>Feld {state.lastEvent.fieldNumber}</span>}</div>{eventVisible && state.lastEvent ? <div className="event-dock-content"><p className="eyebrow">{fieldByNumber[state.lastEvent.fieldNumber].date || "AVEGA Geschichte"}</p><strong>{fieldByNumber[state.lastEvent.fieldNumber].title}</strong><p className="event-description">{fieldByNumber[state.lastEvent.fieldNumber].description}</p><div className="event-dock-action"><span>Spielaktion</span><b>{state.lastEvent.actionLabel}</b></div></div> : <p className="event-dock-empty">Beim nächsten Spezialfeld erscheint der aktuelle Hinweis hier.</p>}</div>
