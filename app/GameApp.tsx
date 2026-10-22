@@ -281,9 +281,9 @@ function createGameAudio(): GameAudio | null {
   const musicFilter = context.createBiquadFilter();
   const musicBus = context.createGain();
   musicFilter.type = "lowpass";
-  musicFilter.frequency.value = 2100;
-  musicFilter.Q.value = .35;
-  musicBus.gain.value = .82;
+  musicFilter.frequency.value = 4400;
+  musicFilter.Q.value = .2;
+  musicBus.gain.value = .76;
   musicBus.connect(musicFilter).connect(master);
   let stopped = false;
   let loopTimer = 0;
@@ -315,26 +315,27 @@ function createGameAudio(): GameAudio | null {
   }
   function musicTone(midi: number, start: number, duration: number, volume: number) {
     if (stopped) return;
-    const gain = context.createGain();
-    const fundamental = context.createOscillator();
-    const warmth = context.createOscillator();
-    fundamental.type = "sine";
-    warmth.type = "triangle";
-    fundamental.frequency.value = frequency(midi);
-    warmth.frequency.value = frequency(midi);
-    warmth.detune.value = 3;
-    const warmGain = context.createGain();
-    warmGain.gain.value = .2;
-    const attack = Math.min(.12, duration * .3);
-    gain.gain.setValueAtTime(.0001, start);
-    gain.gain.linearRampToValueAtTime(volume, start + attack);
-    gain.gain.setValueAtTime(volume, start + Math.max(attack, duration - .16));
-    gain.gain.exponentialRampToValueAtTime(.0001, start + duration);
-    fundamental.connect(gain);
-    warmth.connect(warmGain).connect(gain);
-    gain.connect(musicBus);
-    fundamental.start(start); warmth.start(start);
-    fundamental.stop(start + duration + .04); warmth.stop(start + duration + .04);
+    const noteLength = Math.min(2.8, Math.max(.72, duration * 1.65));
+    const partials = [
+      { multiple: 1, level: 1, type: "triangle" as OscillatorType },
+      { multiple: 2, level: .2, type: "sine" as OscillatorType },
+      { multiple: 3, level: .075, type: "sine" as OscillatorType },
+      { multiple: 4, level: .035, type: "sine" as OscillatorType },
+    ];
+    partials.forEach(({ multiple, level, type }, index) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = type;
+      oscillator.frequency.value = frequency(midi) * multiple;
+      oscillator.detune.value = index % 2 === 0 ? -1.2 : 1.2;
+      gain.gain.setValueAtTime(.0001, start);
+      gain.gain.exponentialRampToValueAtTime(volume * level, start + .009);
+      gain.gain.exponentialRampToValueAtTime(volume * level * .24, start + Math.min(.34, noteLength * .3));
+      gain.gain.exponentialRampToValueAtTime(.0001, start + noteLength);
+      oscillator.connect(gain).connect(musicBus);
+      oscillator.start(start);
+      oscillator.stop(start + noteLength + .04);
+    });
   }
   const phraseBeats = melody.reduce((total, [, duration]) => total + duration, 0);
   const phraseDuration = phraseBeats * beat;
