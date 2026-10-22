@@ -278,16 +278,27 @@ function createGameAudio(): GameAudio | null {
   const master = context.createGain();
   master.gain.value = .42;
   master.connect(context.destination);
+  const musicFilter = context.createBiquadFilter();
+  const musicBus = context.createGain();
+  musicFilter.type = "lowpass";
+  musicFilter.frequency.value = 2100;
+  musicFilter.Q.value = .35;
+  musicBus.gain.value = .82;
+  musicBus.connect(musicFilter).connect(master);
   let stopped = false;
   let loopTimer = 0;
-  const beat = .36;
-  const melody: Array<number | null> = [
-    67, null, 71, 74, 71, null, 69, 67, 64, null, 67, 71, 69, null, 67, null,
-    62, null, 66, 69, 71, 69, 66, null, 64, 67, 71, 74, 72, 71, 67, null,
-    67, null, 71, 74, 76, 74, 71, null, 69, 71, 72, 76, 74, null, 71, null,
-    64, 67, 69, 71, 69, 67, 64, null, 62, 64, 67, 66, 64, 62, 60, null,
+  const beat = .43;
+  const melody: Array<[number | null, number]> = [
+    [67, 1.5], [69, .5], [71, 1], [72, 1], [71, 1], [69, 1],
+    [64, 1.5], [67, .5], [69, 1], [71, 1], [69, 1], [67, 1],
+    [65, 1.5], [69, .5], [72, 1], [74, 1], [72, 1], [69, 1],
+    [67, 2], [64, 1], [62, 1], [64, 1], [67, 1],
+    [69, 1.5], [71, .5], [72, 1], [76, 1], [74, 1], [72, 1],
+    [71, 1.5], [69, .5], [67, 1], [66, 1], [67, 1], [69, 1],
+    [67, 1], [64, 1], [62, 1], [65, 1], [64, 1], [62, 1],
+    [60, 2], [64, 1], [67, 1], [64, 1], [60, 1],
   ];
-  const bass = [48, 43, 45, 41, 48, 45, 43, 48];
+  const harmony = [[48, 52, 55], [52, 55, 59], [53, 57, 60], [48, 52, 55], [45, 48, 52], [50, 53, 57], [43, 47, 50], [48, 52, 55]];
   const frequency = (midi: number) => 440 * 2 ** ((midi - 69) / 12);
   function tone(midi: number, start: number, duration: number, volume: number, type: OscillatorType = "triangle") {
     if (stopped) return;
@@ -302,12 +313,46 @@ function createGameAudio(): GameAudio | null {
     oscillator.start(start);
     oscillator.stop(start + duration + .04);
   }
-  const phraseDuration = melody.length * beat;
+  function musicTone(midi: number, start: number, duration: number, volume: number) {
+    if (stopped) return;
+    const gain = context.createGain();
+    const fundamental = context.createOscillator();
+    const warmth = context.createOscillator();
+    fundamental.type = "sine";
+    warmth.type = "triangle";
+    fundamental.frequency.value = frequency(midi);
+    warmth.frequency.value = frequency(midi);
+    warmth.detune.value = 3;
+    const warmGain = context.createGain();
+    warmGain.gain.value = .2;
+    const attack = Math.min(.12, duration * .3);
+    gain.gain.setValueAtTime(.0001, start);
+    gain.gain.linearRampToValueAtTime(volume, start + attack);
+    gain.gain.setValueAtTime(volume, start + Math.max(attack, duration - .16));
+    gain.gain.exponentialRampToValueAtTime(.0001, start + duration);
+    fundamental.connect(gain);
+    warmth.connect(warmGain).connect(gain);
+    gain.connect(musicBus);
+    fundamental.start(start); warmth.start(start);
+    fundamental.stop(start + duration + .04); warmth.stop(start + duration + .04);
+  }
+  const phraseBeats = melody.reduce((total, [, duration]) => total + duration, 0);
+  const phraseDuration = phraseBeats * beat;
   let nextPhrase = context.currentTime + .08;
   function schedulePhrase() {
     const start = nextPhrase;
-    melody.forEach((note, index) => { if (note !== null) tone(note, start + index * beat, beat * .72, .038); });
-    bass.forEach((note, index) => tone(note, start + index * beat * 8, beat * 3.3, .022, "sine"));
+    let cursor = 0;
+    melody.forEach(([note, duration]) => {
+      if (note !== null) musicTone(note, start + cursor * beat, duration * beat * .94, .042);
+      cursor += duration;
+    });
+    harmony.forEach(([root, third, fifth], bar) => {
+      const barStart = start + bar * beat * 6;
+      musicTone(root, barStart, beat * 5.7, .018);
+      musicTone(root + 12, barStart + beat * .15, beat * 1.7, .015);
+      musicTone(third + 12, barStart + beat * 2.15, beat * 1.7, .014);
+      musicTone(fifth + 12, barStart + beat * 4.15, beat * 1.55, .014);
+    });
     nextPhrase += phraseDuration;
   }
   schedulePhrase();
