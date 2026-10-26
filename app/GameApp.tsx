@@ -389,6 +389,11 @@ function Game({ state, me, act, error, localMode = false, onExit }: { state: Gam
   const seenMove = useRef(state.lastMove?.id ?? "");
   useEffect(() => () => { audioRef.current?.stop(); audioRef.current = null; }, []);
   useEffect(() => {
+    if (state.lastMove || isMoving) return;
+    setPositions(Object.fromEntries(state.players.map((entry) => [entry.id, entry.position])));
+    setMotionPositions({});
+  }, [state.updatedAt, state.lastMove?.id, isMoving]);
+  useEffect(() => {
     if (rolling || !state.lastMove || seenMove.current === state.lastMove.id) return;
     seenMove.current = state.lastMove.id; const move = state.lastMove; const finalPositions = Object.fromEntries(state.players.map((entry) => [entry.id, entry.position])); let cancelled = false;
     const moveStart = positions[move.playerId] || 1; const firstStep = move.path[0];
@@ -448,7 +453,13 @@ function Game({ state, me, act, error, localMode = false, onExit }: { state: Gam
   const focusField = positions[state.lastMove?.playerId || state.activePlayer] || active?.position || 1;
   const placedPlayer = state.players.find((entry) => entry.id === placementPlayerId);
   const placement = placementPlayerId ? placements.indexOf(placementPlayerId) + 1 : 0;
-  async function startRematch() { setPlacementPlayerId(null); setRematchPromptVisible(false); await act("rematch"); }
+  async function startRematch() {
+    await act("rematch");
+    setPositions(Object.fromEntries(state.players.map((entry) => [entry.id, 1])));
+    setMotionPositions({});
+    setPlacementPlayerId(null);
+    setRematchPromptVisible(false);
+  }
   function toggleSound() {
     if (sound) {
       audioRef.current?.stop();
