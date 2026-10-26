@@ -119,6 +119,7 @@ function applyFieldAction(state: GameState, player: Player, landingField: number
 
   if (field.actionType === "move" && field.targetField) {
     player.position = field.targetField;
+    if (field.skipTurns) player.skipTurns += field.skipTurns;
     affected.push(player.id);
   } else if (field.actionType === "skip") {
     player.skipTurns += field.skipTurns ?? 1;

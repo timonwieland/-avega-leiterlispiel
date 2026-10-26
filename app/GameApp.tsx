@@ -80,7 +80,7 @@ function applyLocalField(state: GameState, player: Player, landingField: number)
   const affected: string[] = []; let extraRoll = false;
   let secondary: { playerId: string; from: number; to: number } | undefined;
   if (!field?.actionType || field.actionType === "start") return { extraRoll, secondary };
-  if (field.actionType === "move" && field.targetField) { player.position = field.targetField; affected.push(player.id); }
+  if (field.actionType === "move" && field.targetField) { player.position = field.targetField; if (field.skipTurns) player.skipTurns += field.skipTurns; affected.push(player.id); }
   else if (field.actionType === "skip") { player.skipTurns += field.skipTurns ?? 1; affected.push(player.id); }
   else if (field.actionType === "extraRoll") extraRoll = true;
   else if (field.actionType === "doubleNext") { player.skipTurns += field.skipTurns ?? 1; player.nextRollMultiplier = field.nextRollMultiplier ?? 2; affected.push(player.id); }
