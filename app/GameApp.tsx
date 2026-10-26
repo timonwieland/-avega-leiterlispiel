@@ -391,12 +391,14 @@ function Game({ state, me, act, error, localMode = false, onExit }: { state: Gam
   useEffect(() => {
     if (rolling || !state.lastMove || seenMove.current === state.lastMove.id) return;
     seenMove.current = state.lastMove.id; const move = state.lastMove; const finalPositions = Object.fromEntries(state.players.map((entry) => [entry.id, entry.position])); let cancelled = false;
-    setIsMoving(true); setSpecialMotion(false); setEventVisible(false); setShowMotionLines(true);
+    const moveStart = positions[move.playerId] || 1; const firstStep = move.path[0];
+    if (firstStep) setMotionAngle(movementAngle(fieldCenter(moveStart), fieldCenter(firstStep)));
+    setIsMoving(true); setSpecialMotion(false); setEventVisible(false); setShowMotionLines(Boolean(firstStep));
     const pause = (duration: number) => new Promise((resolve) => window.setTimeout(resolve, duration));
     async function animate() {
       await pause(400);
       if (cancelled) return;
-      let previousField = positions[move.playerId] || 1;
+      let previousField = moveStart;
       setMotionPositions((old) => ({ ...old, [move.playerId]: fieldCenter(previousField) }));
       await pause(40);
       for (const next of move.path) { setMotionAngle(movementAngle(fieldCenter(previousField), fieldCenter(next))); setMotionPositions((old) => ({ ...old, [move.playerId]: fieldCenter(next) })); await pause(320); if (cancelled) return; setPositions((old) => ({ ...old, [move.playerId]: next })); previousField = next; }
@@ -409,8 +411,10 @@ function Game({ state, me, act, error, localMode = false, onExit }: { state: Gam
       if (landing && finalField && landing !== finalField) {
         await pause(1700);
         if (cancelled) return;
-        let previousPoint = fieldCenter(landing); setSpecialMotion(true); setShowMotionLines(true);
-        for (const point of specialMotionPath(landing, finalField)) { setMotionAngle(movementAngle(previousPoint, point)); await pause(75); if (cancelled) return; setMotionPositions((old) => ({ ...old, [move.playerId]: point })); previousPoint = point; }
+        let previousPoint = fieldCenter(landing); const specialPath = specialMotionPath(landing, finalField);
+        if (specialPath[0]) setMotionAngle(movementAngle(previousPoint, specialPath[0]));
+        setSpecialMotion(true); setShowMotionLines(Boolean(specialPath[0]));
+        for (const point of specialPath) { setMotionAngle(movementAngle(previousPoint, point)); await pause(75); if (cancelled) return; setMotionPositions((old) => ({ ...old, [move.playerId]: point })); previousPoint = point; }
       }
       if (cancelled) return;
       setMotionPositions((old) => { const next = { ...old }; delete next[move.playerId]; return next; });
